@@ -4,6 +4,8 @@ This is the build sequence, not a second design specification. [DESIGN.md](DESIG
 
 ## 1. The persistent first shelter
 
+The runnable prototype is implemented. See [README.md](README.md) for build instructions, controls, verification, and current limitations. The desktop experiential review remains open.
+
 Walk through a small wrapping landscape, find somewhere worth stopping, gather blocks, build a crude shelter, quit, and return to find it unchanged.
 
 The prototype brings together:

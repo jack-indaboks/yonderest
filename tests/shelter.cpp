@@ -73,19 +73,19 @@ void physics_and_actions(const std::filesystem::path& path, const Content& conte
     require(std::abs(p.y - start) < 0.001, "jump must land on the same floor");
 
     p.x = s.width() - 0.85;
-    require(act(world, p, Action::mine, 0, h).empty(), "mining must work through the seam");
+    require(act(world, p, Action::mine, 0, h).ok, "mining must work through the seam");
     require(world.block(0, h).empty() && p.inventory[p.selected] == 1, "mining transfers exactly one block");
-    require(act(world, p, Action::place, 0, h).empty(), "placement must work through the seam");
+    require(act(world, p, Action::place, 0, h).ok, "placement must work through the seam");
     require(world.block(0, h) == p.selected && p.inventory[p.selected] == 0, "placement consumes exactly one block");
-    require(!act(world, p, Action::mine, 40, h).empty(), "cannot gather out of reach");
+    require(!act(world, p, Action::mine, 40, h).ok, "cannot gather out of reach");
     p.inventory[p.selected] = 2;
-    require(!act(world, p, Action::place, -1, h - 1).empty(), "cannot place inside the player");
+    require(!act(world, p, Action::place, -1, h - 1).ok, "cannot place inside the player");
     world.set(1, h - 1, s.terrain.stone);
     world.set(2, h - 1, s.terrain.stone);
-    require(!act(world, p, Action::mine, 2, h - 1).empty(), "cannot mine through a wall");
+    require(!act(world, p, Action::mine, 2, h - 1).ok, "cannot mine through a wall");
     world.set(1, h - 1, {});
     world.set(2, h - 1, {});
-    require(!act(world, p, Action::place, 2, h - 4).empty(), "unsupported placement must be refused");
+    require(!act(world, p, Action::place, 2, h - 4).ok, "unsupported placement must be refused");
 
     p.x = 5;
     world.set(6, h - 1, s.terrain.stone);
@@ -137,7 +137,7 @@ void shelter(const std::filesystem::path& path, const Content& content, const Se
                 Block id = world.block(x, h + depth);
                 require(!id.empty(), "quarry must contain a block");
                 auto result = act(world, p, Action::mine, x, h + depth);
-                require(result.empty(), "gather quarry: " + result);
+                require(result.ok, "gather quarry: " + result.message);
             }
         }
         p.x = home + 0.15;
@@ -148,7 +148,7 @@ void shelter(const std::filesystem::path& path, const Content& content, const Se
             require(found != p.inventory.end(), "quarry must supply the shelter");
             p.selected = found->first;
             auto result = act(world, p, Action::place, x, y);
-            require(result.empty(), "build shelter: " + result + " at " + std::to_string(x) + "," + std::to_string(y));
+            require(result.ok, "build shelter: " + result.message + " at " + std::to_string(x) + "," + std::to_string(y));
             built[{x, y}] = p.selected;
         };
         for (int y = ground - 1; y >= ground - 3; --y) place(home - 3, y);
@@ -244,7 +244,7 @@ void missing_content(const std::filesystem::path& path, Content content, const S
         World world(save, content, s);
         auto p = *save.player();
         require(world.block(0, 12) == "demo:amber" && world.solid(0, 12), "missing block must retain identity and ordinary collision");
-        require(act(world, p, Action::mine, 1, 12).empty(), "missing block must remain mineable");
+        require(act(world, p, Action::mine, 1, 12).ok, "missing block must remain mineable");
         require(p.inventory["demo:amber"] == 1, "mining unknown content must retain its ID");
         world.checkpoint(p);
     }

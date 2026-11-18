@@ -1,0 +1,3 @@
+module workshop 1
+requires base 1
+requires expedition 1

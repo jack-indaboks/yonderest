@@ -82,6 +82,16 @@ Materials have stable identities and definitions across terrain, inventories, cr
 
 Appearance and gameplay properties draw on the same material definition where practical. Shared textures, palettes, tints, overlays, and procedural details allow distinctive materials without requiring a unique authored texture for every variation.
 
+### Spatial crafting experiment
+
+For the next prototype, crafting happens by assembling ingredient blocks in the world. Completing a valid configuration transforms it automatically, rather than opening a crafting-table interface. Playtesting will determine whether this is enjoyable; neither automatic activation nor the current WASD-and-mouse controls are permanent commitments.
+
+Some recipes require a working surface underneath. Ingredients are consumed; the required surface remains. A forge is used by literally building over it, not by being inside a nearby bonus radius.
+
+A workbench provides batching. For batch size N, each ingredient placement consumes N units from inventory, and the completed recipe yields its ordinary output multiplied by N. This changes repetition, not the material cost per result. Unfinished ingredient quantities must survive saving and dismantling without changing their meaning.
+
+Stations compose through physical layout. To batch a recipe that requires a forge, put the forge and workbench beside each other and build the ingredient configuration over both. Neither station is consumed, and this does not require a separate bulk version of the recipe.
+
 **Open:** Material-family definitions, property ranges, resource-specific behavior, and how far crafting follows material properties rather than explicit recipes.
 
 ## Modules and extension

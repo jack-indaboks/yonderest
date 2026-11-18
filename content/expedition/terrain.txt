@@ -1,0 +1,3 @@
+expedition-v1
+base:grass base:soil base:stone base:sand base:timber base:leaves
+expedition:clay expedition:copper_ore

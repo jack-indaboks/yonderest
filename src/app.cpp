@@ -10,22 +10,25 @@
 #include <iostream>
 #include <numbers>
 #include <optional>
+#include <set>
 #include <stdexcept>
 
 using namespace yonder;
 namespace {
 
 constexpr int screen_width = 640, screen_height = 360, tile = 16;
+constexpr int world_top = 32, world_bottom = 307;
 
 void sdl(bool result) {
     if (!result) throw std::runtime_error(SDL_GetError());
 }
 
 struct Options {
-    std::filesystem::path save, content, screenshot;
+    std::filesystem::path save, content, manifest, screenshot;
     std::vector<std::filesystem::path> packs;
     std::optional<std::uint64_t> seed;
     int frames = 0;
+    bool keep_generation = false;
 };
 
 Options options(int argc, const char* const* argv) {
@@ -33,22 +36,27 @@ Options options(int argc, const char* const* argv) {
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
         if (arg == "--help") {
-            std::cout << "Yonderest - the persistent first shelter\n"
+            std::cout << "Yonderest - the first expedition\n"
                          "  --save FILE       Separate SQLite world (default: SDL user data/yonderest)\n"
                          "  --seed NUMBER     Seed for a NEW save only\n"
-                         "  --content DIR     Content root containing base/\n"
-                         "  --pack DIR        Additional blocks.txt pack (repeatable)\n"
+                         "  --content DIR     Content root (manifest and packs)\n"
+                         "  --manifest FILE   Pack and terrain configuration\n"
+                         "  --keep-generation Keep this save's existing terrain profile\n"
+                         "  --pack DIR        Additional content pack (repeatable)\n"
                          "  --frames NUMBER   Exit after this many frames (render checks)\n"
                          "  --screenshot FILE Save the last frame as BMP\n"
                          "A/D or arrows: walk; Space/W/Up: jump; mouse: aim\n"
                          "Left mouse: gather; right: place; 1-9/wheel: select\n"
+                         "E over workbench: batch 1/5/10; F2: recipe plans\n"
                          "F1: help; F5: save; F11: fullscreen; Esc: save and quit\n";
             std::exit(0);
         }
+        if (arg == "--keep-generation") { o.keep_generation = true; continue; }
         if (i + 1 == argc) throw std::runtime_error("Missing value for " + arg);
         std::string value = argv[++i];
         if (arg == "--save") o.save = value;
         else if (arg == "--content") o.content = value;
+        else if (arg == "--manifest") o.manifest = value;
         else if (arg == "--pack") o.packs.emplace_back(value);
         else if (arg == "--screenshot") o.screenshot = value;
         else if (arg == "--seed") {
@@ -73,7 +81,7 @@ public:
 
     View() {
         sdl(SDL_Init(SDL_INIT_VIDEO));
-        sdl(SDL_CreateWindowAndRenderer("Yonderest - first shelter", 1280, 720,
+        sdl(SDL_CreateWindowAndRenderer("Yonderest - first expedition", 1280, 720,
                                        SDL_WINDOW_RESIZABLE, &window, &renderer));
         sdl(SDL_SetRenderLogicalPresentation(renderer, screen_width, screen_height, SDL_LOGICAL_PRESENTATION_LETTERBOX));
         SDL_SetRenderVSync(renderer, 1);
@@ -97,7 +105,7 @@ public:
     }
     void follow(const Player& p, World& world) {
         camera_x = p.x + player_width / 2 - screen_width / (2.0 * tile);
-        camera_y = std::clamp(p.y - 12.0, 0.0, world.settings.height() - screen_height / double(tile));
+        camera_y = std::clamp(p.y - 12.0, -world_top / double(tile), world.settings.height() - world_bottom / double(tile));
         // Six blocks cover interaction reach, not a ring of full-height columns.
         world.retain(int(std::floor(camera_x)) - 6, int(std::floor(camera_y)) - 1,
                      int(std::ceil(camera_x + screen_width / double(tile))) + 6,
@@ -108,15 +116,83 @@ public:
     }
     void block_icon(const Material& m, int x, int y, int detail) {
         auto [r, g, b] = m.color;
+        if (m.appearance == "glass") {
+            color(r, g, b);
+            SDL_FRect frame{float(x), float(y), tile, tile};
+            SDL_RenderRect(renderer, &frame);
+            rectangle(float(x + 2), float(y + 2), 2, 7);
+            color(194, 224, 226);
+            rectangle(float(x + 4), float(y + 2), 5, 1);
+            return;
+        }
+        if (m.appearance == "bench") {
+            color(r, g, b);
+            rectangle(float(x), float(y + 2), 16, 5);
+            rectangle(float(x + 2), float(y + 7), 3, 9);
+            rectangle(float(x + 11), float(y + 7), 3, 9);
+            color(r + 28, g + 28, b + 28);
+            rectangle(float(x), float(y + 2), 16, 1);
+            return;
+        }
         color(r, g, b);
         rectangle(float(x), float(y), tile, tile);
         color(r - 18, g - 18, b - 18);
         rectangle(float(x), float(y + 14), tile, 2);
+        if (m.appearance == "bricks" || m.appearance == "planks" || m.appearance == "metal") {
+            for (int row = 4; row < tile; row += 5) {
+                rectangle(float(x), float(y + row), tile, 1);
+                if (m.appearance == "bricks") rectangle(float(x + (row % 2 ? 4 : 11)), float(y + row - 4), 1, 4);
+            }
+        }
+        if (m.appearance == "forge") {
+            color(30, 32, 39); rectangle(float(x + 3), float(y + 5), 10, 8);
+            color(227, 112, 54); rectangle(float(x + 5), float(y + 8), 6, 4);
+            color(255, 201, 103); rectangle(float(x + 7), float(y + 8), 2, 3);
+            return;
+        }
+        if (m.appearance == "ore") {
+            color(203, 127, 73);
+            rectangle(float(x + 3), float(y + 5), 4, 3);
+            rectangle(float(x + 9), float(y + 9), 3, 3);
+        }
         for (int i = 0; i < 3; ++i) {
             int px = (detail + i * 7) % 12 + 2, py = (detail / 13 + i * 5) % 11 + 2;
             color(r + (i == 0 ? 18 : -12), g + (i == 0 ? 18 : -12), b + (i == 0 ? 18 : -12));
             rectangle(float(x + px), float(y + py), 2, 1);
         }
+    }
+    void plan(const Content& content, int index) {
+        color(20, 28, 37); rectangle(30, 47, 580, 251);
+        color(234, 220, 186);
+        text(47, 61, "RECIPE PLANS / LEFT-RIGHT TO BROWSE / F2 CLOSES");
+        if (content.recipes.empty()) { text(47, 90, "No recipes loaded."); return; }
+        const auto& r = content.recipes[wrap(index, int(content.recipes.size()))];
+        text(47, 84, content.material(r.output).name + " x" + std::to_string(r.amount) + " per assembly");
+        text(47, 101, "Place this shape. Completion transforms it.");
+        text(47, 116, "One result here; surplus goes to inventory.");
+        std::set<Block> ingredients;
+        for (const auto& i : r.shape) {
+            int x = 70 + i.x * 24, y = 133 + i.y * 24;
+            if (i.id.empty()) {
+                color(70, 85, 94);
+                SDL_FRect empty{float(x), float(y), 16, 16};
+                SDL_RenderRect(renderer, &empty);
+            } else {
+                block_icon(content.material(i.id), x, y, 0);
+                ingredients.insert(i.id);
+            }
+        }
+        int y = 133;
+        for (const auto& id : ingredients) {
+            block_icon(content.material(id), 293, y - 3, 0);
+            color(234, 220, 186);
+            text(321, y, content.material(id).name);
+            y += 23;
+        }
+        color(165, 187, 190);
+        text(47, 240, r.stations.empty() ? "Build on solid ground or your workshop." : "Required underneath: " + r.stations.front());
+        text(47, 257, "A workbench underneath batches the whole shape.");
+        text(47, 274, "Forge + bench: side by side beneath the shape.");
     }
     void draw(World& world, const Player& p, float mx, float my, bool help, const std::string& message) {
         for (int y = 0; y < screen_height; y += 4) {
@@ -140,7 +216,8 @@ public:
             for (int y = top; y <= top + screen_height / tile + 1; ++y) {
                 int sx = int(std::floor((x - camera_x) * tile));
                 int sy = int(std::floor((y - camera_y) * tile));
-                Block id = world.block(x, y);
+                auto cell = world.cell(x, y);
+                Block id = cell.id;
                 if (id.empty()) {
                     if (y >= surface(world.settings, x)) {
                         color(24, 33, 43);
@@ -150,6 +227,10 @@ public:
                 }
                 int detail = wrap(x, world.settings.width()) * 31 + y * 177;
                 block_icon(world.content.material(id), sx, sy, detail);
+                if (cell.quantity > 1) {
+                    color(255, 226, 139);
+                    text(sx, sy + 7, std::to_string(cell.quantity));
+                }
                 if (world.block(x, y - 1).empty()) {
                     auto [r, g, b] = world.content.material(id).color;
                     color(r + 28, g + 28, b + 28);
@@ -167,17 +248,33 @@ public:
 
         auto [tx, ty] = target(mx, my);
         double reach = std::hypot(distance_x(p.x + player_width / 2, tx + 0.5, world.settings.width()), ty + 0.5 - (p.y + player_height / 2));
-        if (my >= 32 && my < 307) {
+        if (my >= world_top && my < world_bottom) {
             color(reach <= 5 ? 240 : 147, reach <= 5 ? 214 : 113, 137);
             SDL_FRect rect{float((tx - camera_x) * tile), float((ty - camera_y) * tile), tile, tile};
             SDL_RenderRect(renderer, &rect);
+            if (reach <= 5) {
+                auto cell = world.cell(tx, ty);
+                std::string label;
+                if (!cell.id.empty()) {
+                    label = world.content.material(cell.id).name;
+                    if (cell.quantity > 1) label += " x" + std::to_string(cell.quantity);
+                    if (world.content.material(cell.id).station == "workbench") label += " batch x" + std::to_string(cell.batch) + " [E]";
+                } else {
+                    int q = placement_quantity(world, p.selected, tx, ty);
+                    if (q > 1) label = "Place x" + std::to_string(q);
+                }
+                color(234, 220, 186);
+                text(std::clamp(int(mx) - int(label.size()) * 4, 4, std::max(4, screen_width - int(label.size()) * 8 - 4)),
+                     std::clamp(int(my) - 13, 34, 290), label);
+            }
         }
         color(20, 28, 37); rectangle(0, 0, screen_width, 30);
-        color(234, 220, 186); text(8, 6, "YONDEREST / FIRST SHELTER");
+        color(234, 220, 186); text(8, 6, "YONDEREST / EXPEDITION");
         color(165, 187, 190);
-        text(8, 18, "A/D walk  SPACE jump  LMB gather  RMB build  F1 help");
+        text(8, 18, "A/D walk SPACE jump LMB gather RMB build F1 help F2 plans");
+        text(216, 6, world.region(int(p.x), int(p.y + player_height)));
         text(440, 6, "x " + std::to_string(int(p.x)) + " / " + std::to_string(world.settings.width()));
-        color(20, 28, 37); rectangle(0, 307, screen_width, 53);
+        color(20, 28, 37); rectangle(0, world_bottom, screen_width, screen_height - world_bottom);
         auto bar = slots(world.content, p);
         int selected_index = int(std::find(bar.begin(), bar.end(), p.selected) - bar.begin());
         int first = selected_index / 9 * 9;
@@ -188,7 +285,8 @@ public:
             auto count = p.inventory.find(bar[i]);
             color(238, 226, 199);
             text(x + 22, 314, std::to_string(i - first + 1));
-            text(x + 22, 325, std::to_string(count == p.inventory.end() ? 0 : count->second));
+            int amount = count == p.inventory.end() ? 0 : count->second;
+            text(x + 22, 325, amount < 1000 ? std::to_string(amount) : std::to_string(amount / 1000) + "k");
         }
         color(234, 220, 186);
         text(8, 344, world.content.material(p.selected).name + " | " + message.substr(0, 60));
@@ -204,7 +302,7 @@ public:
                 "Hold left mouse to gather, right mouse to build.",
                 "Build beside a block; leave a two-block doorway.",
                 "Wheel or 1-9 selects a material. Gather it first.",
-                "Walk east or west: the world joins itself.",
+                "F2 shows recipes. E over a bench sets batch size.",
                 "F5 saves. Esc saves and quits. Autosave: 5 seconds.",
                 "F11 fullscreen. F1 closes this help."};
             int y = 75;
@@ -230,17 +328,32 @@ int run_game(Options o) {
         SDL_free(path);
     }
     Content content;
-    content.load(o.content / "base");
+    auto manifest = load_manifest(o.manifest.empty() ? o.content / "flagship.txt" : o.manifest);
+    for (const auto& [id, version] : manifest.packs) {
+        content.load(o.content / id);
+        auto found = content.modules.find(id);
+        if (found == content.modules.end() || found->second.version != version) throw std::runtime_error("Manifest version mismatch for " + id);
+    }
     for (const auto& pack : o.packs) content.load(pack);
+    content.validate();
+    auto terrain = load_terrain(o.content / manifest.terrain);
     Save save(o.save);
     auto saved_settings = save.settings();
     Settings settings;
     if (saved_settings) {
         settings = *saved_settings;
+        if (!o.keep_generation && settings.terrain.version == "shelter-v1" && terrain.version == "expedition-v1") {
+            settings.terrain.version = terrain.version;
+            settings.terrain.clay = terrain.clay;
+            settings.terrain.ore = terrain.ore;
+            std::cout << "New territory: expedition-v1; saved chunks stay unchanged.\n";
+        }
+        save.upgrade(settings);
         if (o.seed && *o.seed != settings.seed) std::cout << "Existing save: using its seed, not --seed.\n";
     } else {
         settings.seed = o.seed.value_or(std::uint64_t(std::chrono::system_clock::now().time_since_epoch().count()));
-        settings.terrain = load_terrain(o.content / "base");
+        settings.terrain = terrain;
+        if (o.keep_generation) settings.terrain.version = "shelter-v1";
         save.initialize(settings);
     }
     World world(save, content, settings);
@@ -252,11 +365,12 @@ int run_game(Options o) {
     std::cout << "Save: " << o.save << "\nSeed: " << settings.seed << '\n';
     world.checkpoint(player);
 
-    bool quit = false, help = false, focused = true, jump = false;
+    bool quit = false, help = false, plans = false, focused = true, jump = false;
+    int plan_index = 0;
     bool left = false, right = false, mining = false, placing = false;
     float mx = 320, my = 210;
     double previous = SDL_GetTicksNS() / 1e9, accumulated = 0, autosave = previous, next_action = 0;
-    std::string message = "Choose a place. Gather blocks. Leave a doorway.";
+    std::string message = "F2: assembly plans. Bring something home.";
     int frames = 0;
     view.follow(player, world);
     while (!quit) {
@@ -273,12 +387,21 @@ int run_game(Options o) {
             else if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) {
                 bool down = event.type == SDL_EVENT_KEY_DOWN;
                 auto key = event.key.key;
+                if (plans && down && !event.key.repeat && (key == SDLK_LEFT || key == SDLK_RIGHT)) {
+                    plan_index += key == SDLK_RIGHT ? 1 : -1;
+                    continue;
+                }
                 if (key == SDLK_A || key == SDLK_LEFT) left = down;
                 if (key == SDLK_D || key == SDLK_RIGHT) right = down;
                 if (down && !event.key.repeat) {
                     if (key == SDLK_SPACE || key == SDLK_W || key == SDLK_UP) jump = true;
                     if (key == SDLK_ESCAPE) quit = true;
-                    if (key == SDLK_F1) { help = !help; mining = placing = false; }
+                    if (key == SDLK_F1) { help = !help; plans = false; mining = placing = false; }
+                    if (key == SDLK_F2) { plans = !plans; help = false; left = right = mining = placing = jump = false; }
+                    if (key == SDLK_E && !plans && !help) {
+                        auto [x, y] = view.target(mx, my);
+                        message = adjust_workbench(world, player, x, y).message;
+                    }
                     if (key == SDLK_F5) { world.checkpoint(player); message = "Saved"; }
                     if (key == SDLK_F11) sdl(SDL_SetWindowFullscreen(view.window, !(SDL_GetWindowFlags(view.window) & SDL_WINDOW_FULLSCREEN)));
                     if (key >= SDLK_1 && key <= SDLK_9) {
@@ -303,7 +426,7 @@ int run_game(Options o) {
             }
         }
         double now = SDL_GetTicksNS() / 1e9;
-        accumulated += focused && !help ? std::min(0.1, now - previous) : 0;
+        accumulated += focused && !help && !plans ? std::min(0.1, now - previous) : 0;
         previous = now;
         while (accumulated >= tick_seconds) {
             int direction = int(right) - int(left);
@@ -313,10 +436,10 @@ int run_game(Options o) {
             accumulated -= tick_seconds;
         }
         view.follow(player, world);
-        if (focused && !help && my >= 32 && my < 307 && (mining || placing) && now >= next_action) {
+        if (focused && !help && !plans && my >= world_top && my < world_bottom && (mining || placing) && now >= next_action) {
             auto [x, y] = view.target(mx, my);
             auto result = act(world, player, mining ? Action::mine : Action::place, x, y);
-            message = result.empty() ? (mining ? "Gathered" : "Placed") : result;
+            message = result.message;
             next_action = now + 0.16;
         }
         if (now - autosave >= 5) {
@@ -325,6 +448,7 @@ int run_game(Options o) {
             message = "Autosaved";
         }
         view.draw(world, player, mx, my, help, message);
+        if (plans) view.plan(content, plan_index);
         ++frames;
         if (o.frames && frames >= o.frames) quit = true;
         if (quit && !o.screenshot.empty()) view.screenshot(o.screenshot);

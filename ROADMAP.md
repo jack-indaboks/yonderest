@@ -4,7 +4,7 @@ This is the build sequence, not a second design specification. [DESIGN.md](DESIG
 
 ## 1. The persistent first shelter
 
-The runnable prototype is implemented. See [README.md](README.md) for build instructions, controls, verification, and current limitations. The desktop experiential review remains open.
+The runnable prototype is implemented. The author built a bunker and confirmed it survived quitting and restarting (2026-11-17). See [README.md](README.md) for build instructions, controls, verification, and current limitations.
 
 Walk through a small wrapping landscape, find somewhere worth stopping, gather blocks, build a crude shelter, quit, and return to find it unchanged.
 
@@ -35,6 +35,8 @@ Develop the shelter prototype into a small but enjoyable exploration, gathering,
 The experiential question is whether discovery produces places the player wants to make their own, and whether traveling farther adds possibilities without discarding that attachment.
 
 Generation-update continuity and missing-module behavior need concrete demonstrations as their supporting module mechanisms become usable, rather than remaining architectural promises.
+
+The first-expedition prototype implements the first bounded pass toward this release: gather region-specific resources and return to improve an existing home. It experiments with automatic spatial crafting and physically combined work surfaces, including workbench batching over a neighboring forge. Existing terrain remains authoritative; controls remain unchanged apart from the interactions needed to use the new features. The next review is human playtesting of that loop, not acceptance of the whole milestone. The generation-update demonstration currently covers material transitions on unchanged geometry; arbitrary landform changes remain ahead.
 
 ## 3. The connected universe
 

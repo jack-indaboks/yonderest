@@ -1,0 +1,7 @@
+# ID                  R   G   B  Solid  Name          Appearance  Station
+workshop:planks      183 131  76    1    "Planks"       planks
+workshop:workbench   160 109  64    1    "Workbench"    bench       workbench
+workshop:forge        78  82  94    1    "Forge"        forge       forge
+workshop:bricks      171  81  62    1    "Bricks"       bricks
+workshop:glass        93 168 182    1    "Glass"        glass
+workshop:copper      194 118  77    1    "Copper tiles" metal

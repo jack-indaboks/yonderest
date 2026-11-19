@@ -73,9 +73,6 @@ Save::Save(const std::filesystem::path& path) : path(path) {
                 "CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);"
                 "CREATE TABLE IF NOT EXISTS chunks(x INTEGER, y INTEGER, tiles TEXT NOT NULL, PRIMARY KEY(x,y));"
                 "CREATE TABLE IF NOT EXISTS generation(x INTEGER, y INTEGER, profile TEXT NOT NULL, PRIMARY KEY(x,y));");
-        // A reader inspecting a checkpoint can briefly hold up its commit.
-        // A competing writer still fails at the initial BEGIN above.
-        sqlite3_busy_timeout(db, 1000);
     } catch (...) {
         sqlite3_close(db);
         throw;
@@ -87,7 +84,7 @@ Save::~Save() {
     sqlite3_close(db);
 }
 
-std::optional<Settings> Save::settings() {
+std::optional<Settings> Save::settings() const {
     auto value = meta(db, "world");
     if (!value) return std::nullopt;
     std::istringstream in(*value);
@@ -96,25 +93,43 @@ std::optional<Settings> Save::settings() {
     auto& t = s.terrain;
     if (!(in >> version >> size >> s.seed >> s.columns >> s.rows
           >> t.version >> t.grass >> t.soil >> t.stone >> t.sand >> t.timber >> t.leaves)) invalid();
-    if ((version != 1 && version != 2) || size != chunk_size || s.columns < 4 || s.columns > 1024
-        || s.rows < 4 || s.rows > 1024 || (t.version != "shelter-v1" && t.version != "expedition-v1")) invalid();
-    if (version == 2 && !(in >> std::quoted(t.clay) >> std::quoted(t.ore))) invalid();
-    format = version;
+    if ((version != 1 && version != 2 && version != 3) || size != chunk_size || s.columns <= 0
+        || s.rows <= 0 || (t.version != "shelter-v1" && t.version != "expedition-v1")) invalid();
+    if (version >= 2 && !(in >> std::quoted(t.clay) >> std::quoted(t.ore))) invalid();
     return s;
 }
 
-std::optional<Player> Save::player() {
-    auto value = meta(db, "player");
-    if (!value) return std::nullopt;
-    std::istringstream in(*value);
+Player Save::player() {
+    std::istringstream in(meta(db, "player").value());
     Player p;
     int count;
-    if (!(in >> p.x >> p.y >> std::quoted(p.selected) >> count) || count < 0 || count > 65536) invalid();
+    if (!(in >> p.x >> p.y >> std::quoted(p.selected) >> count) || count < 0) invalid();
     for (int i = 0; i < count; ++i) {
         Block id;
-        int amount;
+        std::int64_t amount;
         if (!(in >> std::quoted(id) >> amount) || id.empty() || amount < 0) invalid();
         p.inventory[id] = amount;
+    }
+    auto hands = meta(db, "hands");
+    if (hands) {
+        std::istringstream hand(*hands);
+        int count;
+        if (!(hand >> p.facing >> p.crouched >> std::quoted(p.last_selected) >> count)
+            || p.facing < -1 || p.facing > 1 || count < 0 || count > 12) invalid();
+        for (int i = 0; i < count; ++i) {
+            Block id;
+            if (!(hand >> std::quoted(id)) || id.empty()) invalid();
+            p.ready.push_back(id);
+        }
+    } else {
+        // Earlier characters were 1.7 blocks tall. Preserve their feet, not an
+        // empty 0.7-block gap above the old floor.
+        p.y += 0.7;
+        auto held = p.inventory.find(p.selected);
+        if (held != p.inventory.end() && held->second > 0) {
+            p.ready.push_back(p.selected);
+            p.last_selected = p.selected;
+        } else p.selected.clear();
     }
     return p;
 }
@@ -122,7 +137,7 @@ std::optional<Player> Save::player() {
 void Save::initialize(const Settings& s) {
     const auto& t = s.terrain;
     std::ostringstream out;
-    out << 2 << ' ' << chunk_size << ' ' << s.seed << ' ' << s.columns << ' ' << s.rows << '\n'
+    out << 3 << ' ' << chunk_size << ' ' << s.seed << ' ' << s.columns << ' ' << s.rows << '\n'
         << t.version << ' ' << t.grass << ' ' << t.soil << ' ' << t.stone << ' '
         << t.sand << ' ' << t.timber << ' ' << t.leaves << '\n'
         << std::quoted(t.clay) << ' ' << std::quoted(t.ore);
@@ -130,10 +145,11 @@ void Save::initialize(const Settings& s) {
 }
 
 void Save::upgrade(const Settings& settings) {
-    // The format belongs to the save, not to the caller's read order.
-    this->settings();
-    if (format == 1) {
-        auto backup_path = std::filesystem::path(path.string() + ".before-expedition.sqlite3");
+    int format = std::stoi(meta(db, "world").value());
+    if (format < 1 || format > 3) invalid();
+    if (format < 3) {
+        auto backup_path = std::filesystem::path(path.string() +
+            (format == 1 ? ".before-expedition.sqlite3" : ".before-keyboard.sqlite3"));
         if (!std::filesystem::exists(backup_path)) {
             auto temporary = std::filesystem::path(backup_path.string() + ".tmp");
             // A separate read connection sees the last committed save, not this
@@ -154,13 +170,12 @@ void Save::upgrade(const Settings& settings) {
             sqlite3_close(destination);
             if (result != SQLITE_DONE) {
                 std::filesystem::remove(temporary);
-                throw std::runtime_error("Could not back up the old shelter save; upgrade cancelled.");
+                throw std::runtime_error("Could not back up the previous save; upgrade cancelled.");
             }
             std::filesystem::rename(temporary, backup_path);
         }
     }
     initialize(settings);
-    format = 2;
 }
 
 std::optional<Chunk> Save::chunk(int x, int y) {
@@ -171,21 +186,24 @@ std::optional<Chunk> Save::chunk(int x, int y) {
     std::istringstream in(query.text(0));
     Chunk c;
     c.profile = query.text(1);
-    bool quantities = in.peek() == 'Y';
-    if (quantities) {
-        std::string header;
-        if (!(in >> header) || header != "Y2") invalid();
+    std::string header;
+    if (in.peek() == 'Y') {
+        if (!(in >> header) || (header != "Y2" && header != "Y3")) invalid();
     }
-    int filled = 0, count;
-    // Runs encode the entire chunk, including empty space, never a seed/edit list.
-    while (filled < int(c.tiles.size())) {
-        Cell cell;
-        if (!(in >> count >> std::quoted(cell.id)) || count <= 0 || count > int(c.tiles.size()) - filled) invalid();
-        if (quantities && (!(in >> cell.quantity >> cell.placed >> cell.batch)
-                           || cell.quantity < 1 || cell.quantity > 1000 || cell.batch < 1 || cell.batch > 1000)) invalid();
-        std::fill_n(c.tiles.begin() + filled, count, cell);
-        filled += count;
-    }
+    auto read_layer = [&](auto& tiles) {
+        int filled = 0;
+        while (filled < int(tiles.size())) {
+            Cell cell;
+            int count;
+            if (!(in >> count >> std::quoted(cell.id)) || count <= 0 || count > int(tiles.size()) - filled) invalid();
+            if (!header.empty() && (!(in >> cell.quantity >> cell.placed >> cell.batch)
+                || cell.quantity < 1 || cell.batch < 1)) invalid();
+            std::fill_n(tiles.begin() + filled, count, cell);
+            filled += count;
+        }
+    };
+    read_layer(c.tiles);
+    if (header == "Y3") read_layer(c.background);
     in >> std::ws;
     if (!in.eof()) invalid();
     return c;
@@ -193,14 +211,18 @@ std::optional<Chunk> Save::chunk(int x, int y) {
 
 void Save::stage(int x, int y, const Chunk& c) {
     std::ostringstream out;
-    out << "Y2\n";
-    for (std::size_t i = 0; i < c.tiles.size();) {
-        std::size_t end = i + 1;
-        while (end < c.tiles.size() && c.tiles[end] == c.tiles[i]) ++end;
-        const auto& cell = c.tiles[i];
-        out << end - i << ' ' << std::quoted(cell.id) << ' ' << cell.quantity << ' ' << cell.placed << ' ' << cell.batch << '\n';
-        i = end;
-    }
+    out << "Y3\n";
+    auto write_layer = [&](const auto& tiles) {
+        for (std::size_t i = 0; i < tiles.size();) {
+            std::size_t end = i + 1;
+            while (end < tiles.size() && tiles[end] == tiles[i]) ++end;
+            const auto& cell = tiles[i];
+            out << end - i << ' ' << std::quoted(cell.id) << ' ' << cell.quantity << ' ' << cell.placed << ' ' << cell.batch << '\n';
+            i = end;
+        }
+    };
+    write_layer(c.tiles);
+    write_layer(c.background);
     Statement query(db, "INSERT OR REPLACE INTO chunks VALUES (?,?,?)");
     query.number(1, x);
     query.number(2, y);
@@ -227,6 +249,10 @@ void Save::checkpoint(const Player& p) {
         << p.x << ' ' << p.y << ' ' << std::quoted(p.selected) << ' ' << p.inventory.size() << '\n';
     for (const auto& [id, count] : p.inventory) out << std::quoted(id) << ' ' << count << '\n';
     put_meta(db, "player", out.str());
+    std::ostringstream hands;
+    hands << p.facing << ' ' << p.crouched << ' ' << std::quoted(p.last_selected) << ' ' << p.ready.size();
+    for (const auto& id : p.ready) hands << ' ' << std::quoted(id);
+    put_meta(db, "hands", hands.str());
     sql(db, "COMMIT; BEGIN IMMEDIATE;");
 }
 

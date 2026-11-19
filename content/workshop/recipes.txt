@@ -51,3 +51,13 @@ at 0 1 base:timber
 empty 1 1
 requires forge
 end
+
+# A small hand-built tool trial, not a progression tree.
+recipe workshop:pick workshop:pick 1 1 1
+at 0 0 base:stone
+at 1 0 base:stone
+at 2 0 base:stone
+empty 0 1
+at 1 1 base:timber
+empty 2 1
+end

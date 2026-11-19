@@ -12,17 +12,19 @@ namespace yonder {
 
 constexpr int chunk_size = 32;
 constexpr double player_width = 0.7;
-constexpr double player_height = 1.7;
+constexpr double player_height = 1.0;
 constexpr double tick_seconds = 1.0 / 120;
 
-// Empty string is empty space. Every material has a namespaced, stable ID.
+// Empty string is empty space. Every material has a stable string ID.
 using Block = std::string;
 struct Material {
     std::array<int, 3> color;
     bool solid;
     std::string name;
     std::string appearance = "grain";
-    std::string station = "";
+    std::string station{};
+    std::string tool{};
+    std::string requires_tool{};
 };
 
 struct Ingredient {
@@ -80,7 +82,7 @@ int wrap(int x, int width);
 double wrap(double x, double width);
 double distance_x(double from, double to, int width);
 int surface(const Settings& settings, int x);
-std::string biome(const Settings& settings, int x);
+std::string biome(const Settings& settings, int x, const std::string& profile);
 
 struct Cell {
     Block id;
@@ -92,7 +94,8 @@ struct Cell {
 
 struct Chunk {
     std::array<Cell, chunk_size * chunk_size> tiles;
-    std::string profile = "shelter-v1";
+    std::array<Cell, chunk_size * chunk_size> background;
+    std::string profile;
     bool dirty = false;
     Cell& at(int x, int y) { return tiles[y * chunk_size + x]; }
     const Cell& at(int x, int y) const { return tiles[y * chunk_size + x]; }
@@ -103,9 +106,21 @@ Chunk generate(const Settings& settings, int cx, int cy,
 struct Player {
     double x = 0, y = 0, vy = 0;
     bool grounded = false;
-    std::map<Block, int> inventory;
+    std::map<Block, std::int64_t> inventory;
     Block selected;
+    Block last_selected;
+    std::vector<Block> ready;
+    int facing = 1; // -1 left, 0 background, 1 right.
+    bool crouched = false, down = false;
+    double height() const { return crouched ? 0.5 : player_height; }
 };
+
+enum class Layer { foreground, background };
+struct Target {
+    int x, y;
+    Layer layer = Layer::foreground;
+};
+Target target(const Player& player);
 
 class Save;
 
@@ -116,15 +131,15 @@ public:
     const Settings settings;
     const Content& content;
 
-    Block block(int x, int y);
-    Cell cell(int x, int y);
+    // References belong to the loaded chunk and expire when retain unloads it.
+    const Block& block(int x, int y, Layer layer = Layer::foreground);
+    const Cell& cell(int x, int y, Layer layer = Layer::foreground);
     std::string region(int x, int y);
     bool solid(int x, int y);
-    void set(int x, int y, const Block& block);
-    void put(int x, int y, const Cell& cell);
+    void set(int x, int y, const Block& block, Layer layer = Layer::foreground);
+    void put(int x, int y, const Cell& cell, Layer layer = Layer::foreground);
     void retain(int left, int top, int right, int bottom);
     void checkpoint(const Player& player);
-    std::size_t loaded_chunks() const { return chunks.size(); }
 
 private:
     Save& save;
@@ -133,18 +148,21 @@ private:
     Chunk& chunk(int x, int y);
 };
 
-bool intersects(World& world, double x, double y);
+bool intersects(World& world, double x, double y, double height = player_height);
 Player spawn(World& world);
-void move(World& world, Player& player, int direction, bool jump);
+void crouch(World& world, Player& player, bool down);
+void move(World& world, Player& player, int direction, bool jump, bool crouch = false, bool sprint = false);
 
 enum class Action { mine, place };
 struct ActionResult {
     bool ok;
     std::string message;
 };
-ActionResult act(World& world, Player& player, Action action, int x, int y);
-ActionResult adjust_workbench(World& world, const Player& player, int x, int y);
-std::vector<Block> slots(const Content& content, const Player& player);
+// Coordinate operations; keyboard play supplies the character's direct target.
+ActionResult act(World& world, Player& player, Action action, int x, int y, Layer layer = Layer::foreground);
+ActionResult adjust_workbench(World& world, int x, int y, Layer layer = Layer::foreground);
+std::vector<Block> slots(const Player& player);
+std::vector<Block> readied(const Player& player);
 
 // Spatial crafting lives in the world. No inventory-grid or SDL dependency.
 int placement_quantity(World& world, const Block& ingredient, int x, int y);

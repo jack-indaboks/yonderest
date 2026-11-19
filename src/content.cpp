@@ -33,10 +33,10 @@ void load_recipes(Content& content, const std::filesystem::path& pack) {
         std::string op;
         in >> op;
         if (op == "recipe" && r.id.empty()) {
-            if (!(in >> r.id >> r.output >> r.amount >> r.output_x >> r.output_y) || r.amount <= 0 || r.amount > 1000) invalid(pack, line);
+            if (!(in >> r.id >> r.output >> r.amount >> r.output_x >> r.output_y) || r.amount <= 0) invalid(pack, line);
         } else if ((op == "at" || op == "empty") && !r.id.empty()) {
             Ingredient i;
-            if (!(in >> i.x >> i.y) || i.x < 0 || i.y < 0 || i.x >= 16 || i.y >= 16) invalid(pack, line);
+            if (!(in >> i.x >> i.y) || i.x < 0 || i.y < 0) invalid(pack, line);
             if (op == "at" && !(in >> i.id)) invalid(pack, line);
             r.width = std::max(r.width, i.x + 1);
             r.height = std::max(r.height, i.y + 1);
@@ -79,12 +79,11 @@ void Content::load(const std::filesystem::path& pack) {
         std::istringstream in(line);
         Block id;
         Material m;
-        int solid;
-        if (!(in >> id >> m.color[0] >> m.color[1] >> m.color[2] >> solid >> std::quoted(m.name))
-            || id.find(':') == std::string::npos || (solid != 0 && solid != 1)
-            || std::ranges::any_of(m.color, [](int c) { return c < 0 || c > 255; })) invalid(pack, line);
-        m.solid = solid;
-        in >> m.appearance >> m.station;
+        if (!(in >> id >> m.color[0] >> m.color[1] >> m.color[2] >> m.solid >> std::quoted(m.name))) invalid(pack, line);
+        in >> m.appearance >> m.station >> m.tool >> m.requires_tool;
+        if (m.station == "-") m.station.clear();
+        if (m.tool == "-") m.tool.clear();
+        if (m.requires_tool == "-") m.requires_tool.clear();
         if (!blocks.emplace(id, m).second) throw std::runtime_error("Duplicate block ID: " + id);
     }
     load_recipes(*this, pack);
@@ -142,7 +141,7 @@ Manifest load_manifest(const std::filesystem::path& file) {
         if (op == "yonderest" && m.version == 0) {
             if (!(in >> m.version) || m.version != 2) invalid(file, line);
         } else if (op == "pack") {
-            if (!(in >> id >> version) || version < 1 || id.find_first_of("/\\.") != std::string::npos) invalid(file, line);
+            if (!(in >> id >> version) || version < 1) invalid(file, line);
             m.packs.emplace_back(id, version);
         } else if (op == "terrain") {
             if (!(in >> m.terrain)) invalid(file, line);

@@ -61,12 +61,12 @@ int surface(const Settings& s, int x) {
                + 7 * std::sin(3 * angle + p * 2) + 3 * std::sin(9 * angle - p));
 }
 
-std::string biome(const Settings& s, int x) {
+std::string biome(const Settings& s, int x, const std::string& profile) {
     double wet = humidity(s, x);
     int h = surface(s, x);
-    if (s.terrain.version == "expedition-v1" && h < s.height() * 0.43 - 5) return "Rocky uplands";
+    if (profile == "expedition-v1" && h < s.height() * 0.43 - 5) return "Rocky uplands";
     if (wet < -0.25) return "Sandreach";
-    if (s.terrain.version == "expedition-v1" && h > s.height() * 0.43 + 4 && wet > 0.2) return "Claybank groves";
+    if (profile == "expedition-v1" && h > s.height() * 0.43 + 4 && wet > 0.2) return "Claybank groves";
     return "Moss groves";
 }
 
@@ -94,7 +94,7 @@ Chunk generate(const Settings& s, int cx, int cy, const std::vector<std::pair<in
         int x = cx * chunk_size + lx;
         int h = surface(s, x);
         bool dry = humidity(s, x) < -0.25;
-        auto region = biome(s, x);
+        auto region = biome(s, x, t.version);
         for (int ly = 0; ly < chunk_size; ++ly) {
             int y = cy * chunk_size + ly;
             Block id;

@@ -18,10 +18,10 @@ struct Assembly {
 // Partial matching is also how a placement finds the workshop it belongs to.
 // Nothing is consumed or reserved until the complete shape matches.
 std::optional<Assembly> assembly(World& world, const Recipe& r, int x, int y, bool complete) {
-    if (y < 0 || y + r.height > world.settings.height()) return {};
+    if (r.width > world.settings.width() || y < 0 || y + r.height > world.settings.height()) return {};
     Assembly a;
     for (const auto& i : r.shape) {
-        auto cell = world.cell(x + i.x, y + i.y);
+        const auto& cell = world.cell(x + i.x, y + i.y);
         if (i.id.empty()) {
             if (!cell.id.empty()) return {};
         } else if (cell.id.empty()) {
@@ -36,7 +36,7 @@ std::optional<Assembly> assembly(World& world, const Recipe& r, int x, int y, bo
     // All supports are on the row immediately under the shape. A workbench
     // only contributes when the shape actually spans its column.
     for (int column = 0; column < r.width; ++column) {
-        auto cell = world.cell(x + column, y + r.height);
+        const auto& cell = world.cell(x + column, y + r.height);
         const auto& station = world.content.material(cell.id).station;
         if (!station.empty()) a.stations.insert(station);
         if (station == "workbench") {
@@ -53,15 +53,16 @@ std::optional<Assembly> assembly(World& world, const Recipe& r, int x, int y, bo
 }
 
 std::vector<std::pair<int, int>> origins(World& world, const Recipe& r, int x, int y, const Block* placing) {
-    std::set<std::pair<int, int>> result;
+    std::vector<std::pair<int, int>> result;
     for (const auto& i : r.shape) {
         if (placing && i.id != *placing) continue;
-        result.emplace(wrap(x - i.x, world.settings.width()), y - i.y);
+        result.emplace_back(wrap(x - i.x, world.settings.width()), y - i.y);
     }
     if (!placing)
         for (int column = 0; column < r.width; ++column)
-            result.emplace(wrap(x - column, world.settings.width()), y - r.height);
-    return {result.begin(), result.end()};
+            result.emplace_back(wrap(x - column, world.settings.width()), y - r.height);
+    std::ranges::sort(result);
+    return result;
 }
 
 }
@@ -88,7 +89,7 @@ std::optional<ActionResult> craft(World& world, Player& p, int changed_x, int ch
             auto a = assembly(world, r, x, y, true);
             if (!a) continue;
             for (const auto& i : r.shape) if (!i.id.empty()) world.set(x + i.x, y + i.y, {});
-            int output = r.amount * a->quantity;
+            auto output = std::int64_t(r.amount) * a->quantity;
             world.put(x + r.output_x, y + r.output_y, Cell{r.output, 1, true});
             p.inventory[r.output] += output - 1;
             return ActionResult{true, "Made " + world.content.material(r.output).name + " x" + std::to_string(output)};

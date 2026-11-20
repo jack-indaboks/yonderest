@@ -72,7 +72,8 @@ Save::Save(const std::filesystem::path& path) : path(path) {
         sql(db, "BEGIN IMMEDIATE;"
                 "CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT NOT NULL);"
                 "CREATE TABLE IF NOT EXISTS chunks(x INTEGER, y INTEGER, tiles TEXT NOT NULL, PRIMARY KEY(x,y));"
-                "CREATE TABLE IF NOT EXISTS generation(x INTEGER, y INTEGER, profile TEXT NOT NULL, PRIMARY KEY(x,y));");
+                "CREATE TABLE IF NOT EXISTS generation(x INTEGER, y INTEGER, profile TEXT NOT NULL, PRIMARY KEY(x,y));"
+                "CREATE TABLE IF NOT EXISTS settling(x INTEGER, y INTEGER, cells TEXT NOT NULL, PRIMARY KEY(x,y));");
     } catch (...) {
         sqlite3_close(db);
         throw;
@@ -93,8 +94,8 @@ std::optional<Settings> Save::settings() const {
     auto& t = s.terrain;
     if (!(in >> version >> size >> s.seed >> s.columns >> s.rows
           >> t.version >> t.grass >> t.soil >> t.stone >> t.sand >> t.timber >> t.leaves)) invalid();
-    if ((version != 1 && version != 2 && version != 3) || size != chunk_size || s.columns <= 0
-        || s.rows <= 0 || (t.version != "shelter-v1" && t.version != "expedition-v1")) invalid();
+    if (version < 1 || version > 4 || size != chunk_size || s.columns <= 0 || s.rows <= 0
+        || profile_rank(t.version) == 0) invalid();
     if (version >= 2 && !(in >> std::quoted(t.clay) >> std::quoted(t.ore))) invalid();
     return s;
 }
@@ -113,8 +114,8 @@ Player Save::player() {
     auto hands = meta(db, "hands");
     if (hands) {
         std::istringstream hand(*hands);
-        int count;
-        if (!(hand >> p.facing >> p.crouched >> std::quoted(p.last_selected) >> count)
+        int count, unused; // Formerly the crouch; posture is not saved.
+        if (!(hand >> p.facing >> unused >> std::quoted(p.last_selected) >> count)
             || p.facing < -1 || p.facing > 1 || count < 0 || count > 12) invalid();
         for (int i = 0; i < count; ++i) {
             Block id;
@@ -131,13 +132,14 @@ Player Save::player() {
             p.last_selected = p.selected;
         } else p.selected.clear();
     }
+    drop_empty(p); // Earlier builds kept emptied entries and their readiness.
     return p;
 }
 
 void Save::initialize(const Settings& s) {
     const auto& t = s.terrain;
     std::ostringstream out;
-    out << 3 << ' ' << chunk_size << ' ' << s.seed << ' ' << s.columns << ' ' << s.rows << '\n'
+    out << 4 << ' ' << chunk_size << ' ' << s.seed << ' ' << s.columns << ' ' << s.rows << '\n'
         << t.version << ' ' << t.grass << ' ' << t.soil << ' ' << t.stone << ' '
         << t.sand << ' ' << t.timber << ' ' << t.leaves << '\n'
         << std::quoted(t.clay) << ' ' << std::quoted(t.ore);
@@ -146,10 +148,10 @@ void Save::initialize(const Settings& s) {
 
 void Save::upgrade(const Settings& settings) {
     int format = std::stoi(meta(db, "world").value());
-    if (format < 1 || format > 3) invalid();
-    if (format < 3) {
-        auto backup_path = std::filesystem::path(path.string() +
-            (format == 1 ? ".before-expedition.sqlite3" : ".before-keyboard.sqlite3"));
+    if (format < 1 || format > 4) invalid();
+    if (format < 4) {
+        static const char* names[]{".before-expedition.sqlite3", ".before-keyboard.sqlite3", ".before-backing.sqlite3"};
+        auto backup_path = std::filesystem::path(path.string() + names[format - 1]);
         if (!std::filesystem::exists(backup_path)) {
             auto temporary = std::filesystem::path(backup_path.string() + ".tmp");
             // A separate read connection sees the last committed save, not this
@@ -206,6 +208,18 @@ std::optional<Chunk> Save::chunk(int x, int y) {
     if (header == "Y3") read_layer(c.background);
     in >> std::ws;
     if (!in.eof()) invalid();
+    Statement settling(db, "SELECT cells FROM settling WHERE x=? AND y=?");
+    settling.number(1, x);
+    settling.number(2, y);
+    if (settling.step()) {
+        std::istringstream cells(settling.text(0));
+        int value;
+        while (cells >> value) {
+            if (value < 0 || value > settle_extent) invalid();
+            c.settling.push_back(std::uint8_t(value));
+        }
+        if (c.settling.size() != c.tiles.size()) invalid();
+    }
     return c;
 }
 
@@ -233,14 +247,14 @@ void Save::stage(int x, int y, const Chunk& c) {
     profile.number(2, y);
     profile.text(3, c.profile);
     profile.step();
-}
-
-std::vector<std::pair<int, int>> Save::legacy_chunks() {
-    Statement query(db, "SELECT chunks.x,chunks.y FROM chunks LEFT JOIN generation USING(x,y) "
-                        "WHERE profile IS NULL OR profile='shelter-v1' ORDER BY chunks.x,chunks.y");
-    std::vector<std::pair<int, int>> result;
-    while (query.step()) result.emplace_back(sqlite3_column_int(query.value, 0), sqlite3_column_int(query.value, 1));
-    return result;
+    if (c.settling.empty()) return;
+    std::ostringstream cells;
+    for (auto value : c.settling) cells << int(value) << ' ';
+    Statement settling(db, "INSERT OR REPLACE INTO settling VALUES (?,?,?)");
+    settling.number(1, x);
+    settling.number(2, y);
+    settling.text(3, cells.str());
+    settling.step();
 }
 
 void Save::checkpoint(const Player& p) {
@@ -250,7 +264,7 @@ void Save::checkpoint(const Player& p) {
     for (const auto& [id, count] : p.inventory) out << std::quoted(id) << ' ' << count << '\n';
     put_meta(db, "player", out.str());
     std::ostringstream hands;
-    hands << p.facing << ' ' << p.crouched << ' ' << std::quoted(p.last_selected) << ' ' << p.ready.size();
+    hands << p.facing << " 0 " << std::quoted(p.last_selected) << ' ' << p.ready.size();
     for (const auto& id : p.ready) hands << ' ' << std::quoted(id);
     put_meta(db, "hands", hands.str());
     sql(db, "COMMIT; BEGIN IMMEDIATE;");

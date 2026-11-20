@@ -1,3 +1,4 @@
-expedition-v1
+# v2: v1 materials, plus natural backing in new territory.
+expedition-v2
 base:grass base:soil base:stone base:sand base:timber base:leaves
 expedition:clay expedition:copper_ore

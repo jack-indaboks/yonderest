@@ -61,46 +61,80 @@ int surface(const Settings& s, int x) {
                + 7 * std::sin(3 * angle + p * 2) + 3 * std::sin(9 * angle - p));
 }
 
-std::string biome(const Settings& s, int x, const std::string& profile) {
-    double wet = humidity(s, x);
-    int h = surface(s, x);
-    if (profile == "expedition-v1" && h < s.height() * 0.43 - 5) return "Rocky uplands";
-    if (wet < -0.25) return "Sandreach";
-    if (profile == "expedition-v1" && h > s.height() * 0.43 + 4 && wet > 0.2) return "Claybank groves";
-    return "Moss groves";
+int profile_rank(const std::string& profile) {
+    if (profile == "shelter-v1") return 1;
+    if (profile == "expedition-v1") return 2;
+    if (profile == "expedition-v2") return 3;
+    return 0;
 }
 
 namespace {
 
-double transition(const Settings& s, int x, int y, const std::vector<std::pair<int, int>>& legacy) {
-    constexpr double extent = 2 * chunk_size;
-    double distance = extent;
-    for (auto [cx, cy] : legacy) {
-        double dx = std::max(0.0, std::abs(distance_x(cx * chunk_size + (chunk_size - 1) / 2.0, x, s.width())) - (chunk_size - 1) / 2.0);
-        double dy = std::max(0.0, std::abs(y - (cy * chunk_size + (chunk_size - 1) / 2.0)) - (chunk_size - 1) / 2.0);
-        distance = std::min(distance, std::hypot(dx, dy));
-    }
-    double t = distance / extent;
-    return t * t * (3 - 2 * t);
+// Regions that change materials. Elsewhere: moss groves, or sand where it is dry.
+enum class Region { plain, rocky_uplands, claybank_groves };
+Region region(const Settings& s, int x) {
+    int h = surface(s, x);
+    if (h < s.height() * 0.43 - 5) return Region::rocky_uplands;
+    if (h > s.height() * 0.43 + 4 && humidity(s, x) > 0.2) return Region::claybank_groves;
+    return Region::plain;
+}
+
+// Each cell may differ from a boundary cell by at most their distance. Where
+// the neighbors agree, the lower envelope satisfies every one of them; where
+// they cannot all be met, split the difference rather than tear one edge.
+std::vector<std::uint8_t> settling(const std::vector<Boundary>& boundary) {
+    if (std::ranges::all_of(boundary, [](const Boundary& b) { return b.settled >= settle_extent; })) return {};
+    std::vector<std::uint8_t> result(chunk_size * chunk_size);
+    for (int y = 0; y < chunk_size; ++y)
+        for (int x = 0; x < chunk_size; ++x) {
+            double lower = settle_extent, upper = 0;
+            for (const auto& b : boundary) {
+                double d = std::hypot(x - b.x, y - b.y);
+                lower = std::min(lower, b.settled + d);
+                upper = std::max(upper, b.settled - d);
+            }
+            result[y * chunk_size + x] = std::uint8_t(std::lround(lower >= upper ? lower : (lower + upper) / 2));
+        }
+    return result;
 }
 
 }
 
-Chunk generate(const Settings& s, int cx, int cy, const std::vector<std::pair<int, int>>& legacy) {
+Chunk generate(const Settings& s, int cx, int cy, const std::vector<Boundary>& boundary) {
     Chunk chunk;
     chunk.profile = s.terrain.version;
     const auto& t = s.terrain;
+    int rank = profile_rank(t.version);
+    if (rank >= 2) chunk.settling = settling(boundary);
     for (int lx = 0; lx < chunk_size; ++lx) {
         int x = cx * chunk_size + lx;
         int h = surface(s, x);
         bool dry = humidity(s, x) < -0.25;
-        auto region = biome(s, x, t.version);
+        auto here = region(s, x);
         for (int ly = 0; ly < chunk_size; ++ly) {
             int y = cy * chunk_size + ly;
-            Block id;
+            Block id, rear;
             if (y >= h) {
-                id = y == h ? (dry ? t.sand : t.grass) : (y < h + 5 ? (dry ? t.sand : t.soil) : t.stone);
+                Block ground = y == h ? (dry ? t.sand : t.grass) : (y < h + 5 ? (dry ? t.sand : t.soil) : t.stone);
+                // Expedition generations change materials, not landform or cave geometry.
+                if (rank >= 2) {
+                    Block newer = ground;
+                    auto patch = hash(s.seed ^ (std::uint64_t(wrap(x, s.width()) / 5) * 971)
+                                             ^ (std::uint64_t(y / 3) * 12983));
+                    if (here == Region::rocky_uplands && y < h + 5) newer = t.stone;
+                    if (here == Region::rocky_uplands && y >= h + 1 && y < h + 48 && patch % 7 < 2) newer = t.ore;
+                    if (here == Region::claybank_groves && y >= h + 1 && y < h + 48
+                        && (y < h + 5 || patch % 7 < 2)) newer = t.clay;
+                    double threshold = (hash(s.seed ^ (std::uint64_t(wrap(x, s.width())) * 972111)
+                                                    ^ (std::uint64_t(y) * 178991)) % 100000) / 100000.0;
+                    double settled = chunk.settling.empty() ? 1.0
+                        : chunk.settling[ly * chunk_size + lx] / double(settle_extent);
+                    if (threshold < settled * settled * (3 - 2 * settled)) ground = newer;
+                }
+                id = ground;
                 if (y > h + 10 && y < s.height() - 3 && underground(s, x, y) > 0.35) id.clear();
+                // Natural backing is the host material, not a second ore deposit.
+                if (rank >= 3 && y > h) rear = ground == t.ore ? t.stone : ground;
             } else {
                 for (int cell = x / 16 - 1; cell <= x / 16 + 1; ++cell) {
                     int tx = tree(s, cell);
@@ -112,22 +146,8 @@ Chunk generate(const Settings& s, int cx, int cy, const std::vector<std::pair<in
                         id = t.leaves;
                 }
             }
-            // The first update changes materials, not landform or cave geometry.
-            // A fixed old-territory footprint makes this independent of the
-            // order in which new chunks are encountered, in both axes.
-            if (t.version == "expedition-v1" && !id.empty() && y >= h) {
-                Block newer = id;
-                auto patch = hash(s.seed ^ (std::uint64_t(wrap(x, s.width()) / 5) * 971)
-                                         ^ (std::uint64_t(y / 3) * 12983));
-                if (region == "Rocky uplands" && y < h + 5) newer = t.stone;
-                if (region == "Rocky uplands" && y >= h + 1 && y < h + 48 && patch % 7 < 2) newer = t.ore;
-                if (region == "Claybank groves" && y >= h + 1 && y < h + 48
-                    && (y < h + 5 || patch % 7 < 2)) newer = t.clay;
-                double threshold = (hash(s.seed ^ (std::uint64_t(wrap(x, s.width())) * 972111)
-                                                ^ (std::uint64_t(y) * 178991)) % 100000) / 100000.0;
-                if (threshold < transition(s, x, y, legacy)) id = newer;
-            }
             chunk.at(lx, ly) = Cell{id};
+            chunk.background[ly * chunk_size + lx] = Cell{rear};
         }
     }
     chunk.dirty = true;

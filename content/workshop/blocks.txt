@@ -1,10 +1,10 @@
-# ID                  R   G   B  Solid  Name          Appearance  Station Tool Required-tool
-workshop:planks      183 131  76    1    "Planks"       planks
-workshop:workbench   160 109  64    1    "Workbench"    bench       workbench
-workshop:forge        78  82  94    1    "Forge"        forge       forge
-workshop:bricks      171  81  62    1    "Bricks"       bricks
-workshop:glass        93 168 182    1    "Glass"        glass
-workshop:copper      194 118  77    1    "Copper tiles" metal
+# ID                  R   G   B  Solid  Name          Station Tool Required-tool
+workshop:planks      183 131  76    1    "Planks"
+workshop:workbench   160 109  64    1    "Workbench"    workbench
+workshop:forge        78  82  94    1    "Forge"        forge
+workshop:bricks      171  81  62    1    "Bricks"
+workshop:glass        93 168 182    1    "Glass"
+workshop:copper      194 118  77    1    "Copper tiles"
 
 # Nonblocking, placeable tool. Last columns: station, tool, required tool.
-workshop:pick        151 162 174    0    "Stone pick"   pick - pick
+workshop:pick        151 162 174    0    "Stone pick"   - pick

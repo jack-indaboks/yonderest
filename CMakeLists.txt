@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-find_package(SDL3 3.2 REQUIRED CONFIG)
+find_package(SDL3 3.4 REQUIRED CONFIG)
 find_package(SQLite3 REQUIRED)
 
 add_library(world src/content.cpp src/terrain.cpp src/world.cpp src/play.cpp src/craft.cpp src/save.cpp)
@@ -20,10 +20,18 @@ target_compile_options(desktop PRIVATE -Wall -Wextra -Wpedantic)
 add_executable(yonderest src/main.cpp)
 target_link_libraries(yonderest PRIVATE desktop)
 
-file(GLOB_RECURSE content_files CONFIGURE_DEPENDS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} content/*.txt)
-foreach(file ${content_files})
-    configure_file(${file} ${file} COPYONLY)
-endforeach()
+# The build's content is a mirror of the source tree: deletions carry over too.
+file(GLOB_RECURSE content_files CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/content/*)
+# Rewritten only when membership changes, so a removed file still triggers the mirror.
+file(CONFIGURE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/content.list CONTENT "${content_files}")
+add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/content.stamp
+    COMMAND ${CMAKE_COMMAND} -E rm -rf ${CMAKE_CURRENT_BINARY_DIR}/content
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/content ${CMAKE_CURRENT_BINARY_DIR}/content
+    COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_BINARY_DIR}/content.stamp
+    DEPENDS ${content_files} ${CMAKE_CURRENT_BINARY_DIR}/content.list
+    COMMENT "Mirroring content")
+add_custom_target(content ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/content.stamp)
+add_dependencies(yonderest content)
 
 include(CTest)
 if(BUILD_TESTING)
@@ -36,11 +44,15 @@ if(BUILD_TESTING)
     add_test(NAME keyboard COMMAND keyboard-test ${CMAKE_CURRENT_SOURCE_DIR}/content)
     find_package(Threads REQUIRED)
     add_executable(desktop-test tests/desktop.cpp)
+    add_dependencies(desktop-test content)
     target_link_libraries(desktop-test PRIVATE desktop Threads::Threads)
     add_test(NAME desktop COMMAND desktop-test ${CMAKE_CURRENT_BINARY_DIR}/content)
     add_test(NAME desktop-build COMMAND desktop-test ${CMAKE_CURRENT_BINARY_DIR}/content build)
     add_test(NAME desktop-empty COMMAND desktop-test ${CMAKE_CURRENT_BINARY_DIR}/content empty)
-    set_tests_properties(desktop desktop-build desktop-empty PROPERTIES TIMEOUT 20 ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_RENDER_DRIVER=software")
+    add_test(NAME desktop-reference COMMAND desktop-test ${CMAKE_CURRENT_BINARY_DIR}/content reference)
+    add_test(NAME desktop-facing COMMAND desktop-test ${CMAKE_CURRENT_BINARY_DIR}/content facing)
+    add_test(NAME desktop-crawl COMMAND desktop-test ${CMAKE_CURRENT_BINARY_DIR}/content crawl)
+    set_tests_properties(desktop desktop-build desktop-empty desktop-reference desktop-facing desktop-crawl PROPERTIES TIMEOUT 20 ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_RENDER_DRIVER=software")
 endif()
 
 install(TARGETS yonderest RUNTIME DESTINATION .)

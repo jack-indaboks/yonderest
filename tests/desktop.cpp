@@ -5,6 +5,7 @@
 #include <atomic>
 #include <chrono>
 #include <filesystem>
+#include <cmath>
 #include <iostream>
 #include <stdexcept>
 #include <thread>
@@ -47,6 +48,9 @@ int main(int argc, char** argv) {
         require(argc >= 2, "expected content root");
         bool building = argc >= 3 && std::string(argv[2]) == "build";
         bool empty = argc >= 3 && std::string(argv[2]) == "empty";
+        bool reference = argc >= 3 && std::string(argv[2]) == "reference";
+        bool facing = argc >= 3 && std::string(argv[2]) == "facing";
+        bool crawl = argc >= 3 && std::string(argv[2]) == "crawl";
         std::string content = argv[1], save = save_path.string();
         {
             Settings settings;
@@ -64,7 +68,16 @@ int main(int argc, char** argv) {
                 for (int y : {28, 29, 30}) world.set(x, y, "base:stone", Layer::background);
             }
             Player p;
-            if (empty) {
+            if (facing || crawl) {
+                p.x = 10.15; p.y = 29; p.selected = "base:soil";
+                p.inventory["base:soil"] = 3;
+                for (int x = 9; x <= 14; ++x) for (int y : {28, 29}) world.set(x, y, {}, Layer::background);
+            } else if (reference) {
+                world.set(10, 29, {}, Layer::background);
+                p.x = 10.15; p.y = 29; p.selected = "base:soil";
+                p.inventory["base:soil"] = 3;
+                p.ready = {"base:soil"};
+            } else if (empty) {
                 p.x = 10.15; p.y = 29;
                 p.inventory["base:soil"] = 2;
                 p.inventory["workshop:pick"] = 0;
@@ -92,11 +105,40 @@ int main(int argc, char** argv) {
                     std::this_thread::sleep_for(5ms);
                 require(window_id != 0, "desktop did not show a window");
                 std::this_thread::sleep_for(100ms);
-                if (empty) {
-                    tap(SDLK_I); tap(SDLK_D); tap(SDLK_J);
-                    std::this_thread::sleep_for(40ms); // redraw after the last highlighted slot disappears
-                    tap(SDLK_I); tap(SDLK_H);
-                    std::this_thread::sleep_for(40ms); // the empty wheel icon
+                if (facing) {
+                    key(SDLK_D, true); key(SDLK_W, true); // walking right, turned to the wall
+                    std::this_thread::sleep_for(40ms);
+                    key(SDLK_W, false);                   // D is still held: it takes over
+                    key(SDLK_D, false);
+                    tap(SDLK_L);                          // so this places in front
+                    tap(SDLK_W); tap(SDLK_L);             // letting go of W alone changes nothing: a rear wall
+                    tap(SDLK_H);                          // empty hand
+                    key(SDLK_S, true); tap(SDLK_J);       // S, pressed last, turns sideways to crawl: J digs the floor
+                    std::this_thread::sleep_for(40ms);
+                } else if (crawl) {
+                    key(SDLK_S, true);
+                    std::this_thread::sleep_for(40ms);
+                    key(SDLK_W, true); tap(SDLK_L);       // W, pressed last, ends the crawl: L reaches the rear wall level with the body
+                    std::this_thread::sleep_for(40ms);
+                } else if (reference) {
+                    // The recipe reference stays up while building and never acts on the world.
+                    tap(SDLK_R); tap(SDLK_RIGHT); tap(SDLK_RIGHT); tap(SDLK_LEFT);
+                    std::this_thread::sleep_for(60ms);
+                    tap(SDLK_ESCAPE);  // with only the reference visible: the menu, not "close reference"
+                    tap(SDLK_L);       // swallowed by the open menu, or it would place in front
+                    tap(SDLK_RETURN);  // Resume; Enter must not reach the world
+                    tap(SDLK_I); tap(SDLK_ESCAPE); // the inventory closes; it does not open the menu
+                    key(SDLK_W, true); tap(SDLK_L); key(SDLK_W, false); // so this rear placement reaches the world
+                    tap(SDLK_ESCAPE); tap(SDLK_DOWN); tap(SDLK_RETURN); // Controls page
+                    tap(SDLK_ESCAPE); tap(SDLK_L); // back to the menu, which swallows L
+                    tap(SDLK_ESCAPE);              // play again
+                    tap(SDLK_F5); tap(SDLK_F1); tap(SDLK_F2); // no function-key bindings remain
+                    std::this_thread::sleep_for(60ms);
+                } else if (empty) {
+                    tap(SDLK_I); tap(SDLK_D); tap(SDLK_J); // the only slot left is soil: ready it
+                    std::this_thread::sleep_for(40ms);
+                    tap(SDLK_I); tap(SDLK_H);              // a chooser holding soil alone
+                    std::this_thread::sleep_for(40ms);
                 } else if (building) {
                     key(SDLK_S, true);
                     for (int i = 0; i < 2; ++i) {
@@ -105,7 +147,7 @@ int main(int argc, char** argv) {
                         key(SDLK_L, false);
                     }
                     key(SDLK_S, false);
-                    tap(SDLK_W); tap(SDLK_L);
+                    key(SDLK_W, true); tap(SDLK_L); key(SDLK_W, false);
                     tap(SDLK_D); tap(SDLK_L); // place a floating foreground block to the right
                     key(SDLK_A, true); // back away with Place released, keeping work-facing
                     std::this_thread::sleep_for(200ms);
@@ -117,22 +159,23 @@ int main(int argc, char** argv) {
                     key(SDLK_S, false);
                     std::this_thread::sleep_for(300ms);
                     tap(SDLK_I); tap(SDLK_J); tap(SDLK_K);
-                    tap(SDLK_W); key(SDLK_L, true);
+                    key(SDLK_W, true); key(SDLK_L, true);
                     std::this_thread::sleep_for(200ms);
-                    key(SDLK_L, false);
-                    // The depleted soil is still marked in slot zero.
-                    tap(SDLK_I); tap(SDLK_D); tap(SDLK_J);
+                    key(SDLK_L, false); key(SDLK_W, false);
+                    // The emptied soil has left; timber and the pick remain.
+                    tap(SDLK_I); tap(SDLK_J);
                     tap(SDLK_D); tap(SDLK_J); tap(SDLK_K); // equip the pick
                     tap(SDLK_H); tap(SDLK_H); // empty, then chooser at pick
                     tap(SDLK_J); // timber
                     key(SDLK_J, true); // pick again; do NOT release before closing
+                    tap(SDLK_SPACE);   // out of the hole just dug: steps are jumped, never climbed
                     key(SDLK_D, true);
-                    std::this_thread::sleep_for(80ms); // choosing while walking
+                    std::this_thread::sleep_for(160ms); // choosing while walking, once clear of the hole
                     key(SDLK_D, false);
-                    tap(SDLK_W); // aim at the prepared rear wall
+                    key(SDLK_W, true); // aim at the prepared rear wall while held
                     tap(SDLK_H); // equip pick with J still physically held
                     std::this_thread::sleep_for(220ms);
-                    key(SDLK_J, false);
+                    key(SDLK_J, false); key(SDLK_W, false);
                     // Mouse and number-row input no longer operate on the world.
                     tap(SDLK_1);
                     SDL_Event mouse{};
@@ -161,9 +204,27 @@ int main(int argc, char** argv) {
             Content blocks;
             blocks.load(std::filesystem::path(content) / "base");
             World world(result, blocks, settings);
-            if (empty) {
-                require(p.ready.empty() && p.inventory.at("base:soil") == 2 && p.inventory.at("workshop:pick") == 0,
-                        "unreadying the last depleted slot keeps the other inventory slot valid");
+            if (facing) {
+                bool front = false, rear = false, dug = false;
+                for (int x = 10; x <= 14; ++x) {
+                    front |= world.block(x, 29) == "base:soil";
+                    rear |= world.block(x, 29, Layer::background) == "base:soil";
+                    dug |= world.block(x, 30).empty() && world.block(x, 30, Layer::background) == "base:stone";
+                }
+                require(front, "letting go of W hands facing to a held D");
+                require(rear, "letting go of W alone leaves the character facing the rear wall");
+                require(dug && p.inventory.at("base:soil") == 2, "S pressed while facing the wall turns sideways to crawl and aim beneath");
+            } else if (crawl) {
+                require(world.block(10, 29, Layer::background) == "base:soil" && p.facing == 0,
+                        "W pressed while crawling ends the crawl to face the wall");
+            } else if (reference) {
+                require(world.block(11, 29).empty() && world.block(10, 29, Layer::background) == "base:soil",
+                        "only the rear placement in play reached the world; dialogs swallowed the others");
+                require(p.inventory.at("base:soil") == 2 && std::abs(p.x - 10.15) < 0.001, "browsing recipes neither moves nor spends");
+            } else if (empty) {
+                require(!p.inventory.contains("workshop:pick") && p.inventory.at("base:soil") == 2
+                            && p.ready == std::vector<Block>{"base:soil"} && p.selected.empty(),
+                        "a save's emptied entry and its readiness are dropped on load; only carried objects ready");
             } else if (building) {
                 require(world.block(10, 29) == "base:soil" && world.block(10, 28) == "base:soil", "SDL S+Space+L builds two scaffold cells without precise timing");
                 require(world.block(10, 27, Layer::background) == "base:soil", "standing on that scaffold reaches the rear wall above");
@@ -174,9 +235,9 @@ int main(int argc, char** argv) {
             } else {
                 require(world.block(10, 30).empty() && world.block(10, 30, Layer::background) == "base:soil", "keyboard gathering and facing-based rear placement change the intended layers");
                 require(p.x > 10.35 && p.x < 11.2, "walking remains active while choosing");
-                require(p.inventory.at("base:soil") == 0 && p.inventory.at("base:timber") == 2 && p.inventory.at("workshop:pick") == 1,
+                require(!p.inventory.contains("base:soil") && p.inventory.at("base:timber") == 2 && p.inventory.at("workshop:pick") == 1,
                         "selection does not execute a newly equipped tool");
-                require(p.ready == std::vector<Block>{"base:soil", "base:timber", "workshop:pick"}, "readiness marks stay with the original inventory");
+                require(p.ready == std::vector<Block>{"base:timber", "workshop:pick"}, "the emptied soil left the ready marks; the others stay");
                 require(p.selected.empty() && p.last_selected == "workshop:pick", "hand transitions persist the last actual held object, not an unconfirmed choice");
             }
         }

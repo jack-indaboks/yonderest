@@ -33,7 +33,8 @@ Player standing(double x = 10.15) {
 
 void tick(World& w, Player& p, Hands& h, int n, int direction = 0, bool down = true) {
     for (int i = 0; i < n; ++i) {
-        move(w, p, direction, false, down);
+        p.down = down;
+        move(w, p, direction, false);
         h.step(w, p);
     }
 }
@@ -48,24 +49,23 @@ void targets(World& w) {
     require(target(p).x == 10 && target(p).y == 29 && target(p).layer == Layer::background, "turning away addresses the rear wall behind the character");
     move(w, p, 1, false);
     require(p.facing == 0, "walking does not itself undo an explicit facing");
-    crouch(w, p, true);
-    require(p.height() == 0.5 && std::abs(p.y + p.height() - 30) < 0.001, "crouching shortens the body, not its footing");
+    p.down = true;
     require(target(p).y == 30 && target(p).layer == Layer::background, "S aims beneath the feet without facing the camera");
     p.facing = 1;
     require(target(p).x == 10 && target(p).layer == Layer::foreground, "S overrides lateral reach, not facing");
     double start = p.x;
-    for (int i = 0; i < 60; ++i) move(w, p, 1, false, true, true);
+    for (int i = 0; i < 60; ++i) move(w, p, 1, false, true);
     require(std::abs(p.x - start - 1) < 0.001, "crawling is slower than walking even with sprint held");
-    crouch(w, p, false);
+    p.down = false;
     start = p.x;
     for (int i = 0; i < 60; ++i) move(w, p, 1, false);
     require(std::abs(p.x - start - 3) < 0.001, "walking retains the six-block speed");
     start = p.x;
-    for (int i = 0; i < 60; ++i) move(w, p, 1, false, false, true);
+    for (int i = 0; i < 60; ++i) move(w, p, 1, false, true);
     require(std::abs(p.x - start - 4.5) < 0.001, "sprint uses nine blocks per second");
     Player walk = standing(20.15), run = walk;
     move(w, walk, 1, true);
-    move(w, run, 1, true, false, true);
+    move(w, run, 1, true, true);
     require(walk.vy == run.vy && walk.y == run.y && run.x > walk.x, "running jumps change travel, not the jump impulse");
     p = standing(w.settings.width() - 0.85);
     require(wrap(target(p).x, w.settings.width()) == 0, "direct forward reach crosses the world seam");
@@ -91,13 +91,13 @@ void boundary_placement(World& w) {
     }
     clear(w);
     auto p = standing();
-    crouch(w, p, true);
+    p.down = true;
     p.y = 28; p.vy = 0; p.grounded = false;
     w.set(10, 27, "base:stone"); // Head contact stops upward velocity before landing.
     p.inventory["base:soil"] = 2;
     Hands h;
     h.equip(p, "base:soil");
-    require(h.place(w, p, false).ok && w.block(10, 29) == "base:soil" && !intersects(w, p.x, p.y, p.height()),
+    require(h.place(w, p, false).ok && w.block(10, 29) == "base:soil" && !intersects(w, p.x, p.y),
             "downward placement uses the first clear cell below the feet even when upward motion has stopped");
 }
 
@@ -128,13 +128,14 @@ void selection() {
     p.inventory["base:timber"] = 0;
     h.depleted(p);
     require(p.selected.empty() && p.last_selected == "base:timber", "depletion returns to empty hand");
+    require(!p.inventory.contains("base:timber") && std::ranges::find(p.ready, "base:timber") == p.ready.end(),
+            "an emptied object leaves the inventory and its readiness with it");
+    require(!h.mark(p, "base:timber").ok && p.ready == std::vector<Block>{"base:soil"}, "only carried objects can be readied");
     h.hand(p);
     require(h.choice == "base:soil", "unavailable last object falls back to the first available ready entry");
     h.hand(p);
     h.mark(p, "base:soil");
-    require(readied(p).empty() && p.inventory["base:soil"] == 4, "unreadying keeps the object in its inventory position");
-    auto items = slots(p);
-    require(std::ranges::find(items, "base:timber") != items.end(), "depleted readiness remains visible in inventory");
+    require(p.ready.empty() && p.inventory["base:soil"] == 4, "unreadying keeps the object in its inventory position");
     p = {};
     for (int i = 0; i < 13; ++i) {
         auto id = "test:" + std::to_string(i);
@@ -171,53 +172,53 @@ void jump_building(World& w) {
     auto p = standing();
     p.inventory["base:soil"] = 10;
     h.equip(p, "base:soil");
-    crouch(w, p, true);
+    p.down = true;
     require(h.place(w, p, true).ok && h.pending.has_value(), "S held before Space+L buffers an early placement");
-    move(w, p, 0, true, true);
+    move(w, p, 0, true);
     h.step(w, p);
     require(h.pending.has_value() && w.block(10, 29).empty(), "an overlapping request waits, without spending a block");
     tick(w, p, h, 150);
     require(w.block(10, 29) == "base:soil" && p.inventory.at("base:soil") == 9 && !h.pending,
             "one press places once when clear, never on every pending check");
-    require(std::abs(p.y + p.height() - 29) < 0.001, "jump-building lands on the new scaffold");
+    require(std::abs(p.y + player_height - 29) < 0.001, "jump-building lands on the new scaffold");
     require(h.place(w, p, true).ok, "the next distinct press can build the next scaffold block");
-    move(w, p, 0, true, true);
+    move(w, p, 0, true);
     h.step(w, p);
     tick(w, p, h, 150);
     require(w.block(10, 28) == "base:soil" && p.inventory.at("base:soil") == 8, "successive jumps make a usable pillar");
 
     clear(w); p = standing(); p.inventory["base:soil"] = 3; h.equip(p, "base:soil");
-    crouch(w, p, true);
-    move(w, p, 0, true, true);
-    tick(w, p, h, 85); // Descending, but with a whole clear cell beneath the feet.
+    p.down = true;
+    move(w, p, 0, true);
+    tick(w, p, h, 57); // Descending, but with a whole clear cell beneath the feet.
     require(p.vy > 0, "descent fixture");
-    auto t = int(std::ceil(p.y + p.height() - 0.00001));
+    auto t = int(std::ceil(p.y + player_height - 0.00001));
     require(h.place(w, p, false).ok && w.block(10, t) == "base:soil", "descent places in the first fully clear cell beneath the body");
-    require(!intersects(w, p.x, p.y, p.height()), "late placement never embeds or lifts the character");
+    require(!intersects(w, p.x, p.y), "late placement never embeds or lifts the character");
 
     clear(w); p = standing(); p.inventory["base:soil"] = 3; h.equip(p, "base:soil");
     w.set(10, 28, "base:stone");
-    crouch(w, p, true); h.place(w, p, true);
-    move(w, p, 0, true, true); h.step(w, p); tick(w, p, h, 150);
+    p.down = true; h.place(w, p, true);
+    move(w, p, 0, true); h.step(w, p); tick(w, p, h, 150);
     require(w.block(10, 29).empty() && p.inventory.at("base:soil") == 3 && !h.pending, "a low ceiling cancels an impossible request without consuming blocks");
 
     clear(w); p = standing(); p.inventory["base:soil"] = 3; h.equip(p, "base:soil");
-    crouch(w, p, true); h.place(w, p, true);
-    move(w, p, 0, true, true); h.step(w, p);
-    crouch(w, p, false); h.step(w, p);
+    p.down = true; h.place(w, p, true);
+    move(w, p, 0, true); h.step(w, p);
+    p.down = false; h.step(w, p);
     require(!h.pending, "releasing downward aim cancels the buffered underfoot request");
     require(p.inventory.at("base:soil") == 3, "cancelled request costs nothing");
 
     clear(w); p = standing(); p.inventory["base:soil"] = 3; h.equip(p, "base:soil");
-    crouch(w, p, true); move(w, p, 0, true, true); tick(w, p, h, 51);
+    p.down = true; move(w, p, 0, true); tick(w, p, h, 40);
     require(std::abs(p.vy) < 0.5, "apex fixture");
-    int apex = int(std::ceil(p.y + p.height() - 0.00001));
+    int apex = int(std::ceil(p.y + player_height - 0.00001));
     require(h.place(w, p, false).ok && w.block(10, apex) == "base:soil" && !h.pending,
             "underfoot placement works near the apex without attachment or waiting for an unreachable higher row");
 
     clear(w); p = standing(); p.inventory["base:soil"] = 3; h.equip(p, "base:soil");
-    crouch(w, p, true); move(w, p, 0, true, true); tick(w, p, h, 101);
-    require(p.vy > 0 && p.y + p.height() > 29, "near-landing fixture has less than a full empty cell beneath");
+    p.down = true; move(w, p, 0, true); tick(w, p, h, 73);
+    require(p.vy > 0 && p.y + player_height > 29, "near-landing fixture has less than a full empty cell beneath");
     require(!h.place(w, p, false).ok && p.inventory.at("base:soil") == 3 && !h.pending,
             "a late press with less than one block of clearance cannot manufacture space or lift the player");
 
@@ -253,7 +254,7 @@ void rear_wall(World& w) {
     require(h.primary(w, p).ok && p.inventory["base:timber"] == 1 && w.block(10, 29, Layer::background).empty(), "J gathers the addressed rear wall without touching foreground");
     w.put(10, 30, Cell{"workshop:workbench", 1, true, 5});
     h.equip(p, "base:timber");
-    require(h.place(w, p, false).ok && w.cell(10, 29, Layer::background).quantity == 1 && p.inventory.at("base:timber") == 0,
+    require(h.place(w, p, false).ok && w.cell(10, 29, Layer::background).quantity == 1 && !p.inventory.contains("base:timber"),
             "foreground workbench batching does not charge N for a single rear-wall block");
 }
 
@@ -270,15 +271,14 @@ void persist(const std::filesystem::path& file, const Content& content, const Se
         before.ready = {"workshop:pick", "base:soil"};
         before.selected = "base:soil"; before.last_selected = "workshop:pick";
         before.facing = 0;
-        crouch(w, before, true);
         w.retain(400, 150, 440, 180); w.checkpoint(before);
     }
     {
         Save save(file); World w(save, content, *save.settings());
         auto p = save.player();
         require(p.inventory == before.inventory && p.ready == before.ready && p.selected == before.selected
-            && p.last_selected == before.last_selected && p.facing == 0 && p.crouched && p.y == before.y,
-            "inventory, readiness, last selection, facing and physical posture survive restart");
+            && p.last_selected == before.last_selected && p.facing == 0 && p.y == before.y,
+            "inventory, readiness, last selection, facing and position survive restart");
         require(w.cell(31, 31) == Cell{"base:timber", 5, true}, "foreground batch state survives the new format");
         require(w.block(31, 31, Layer::background) == "missing:wall", "missing background content retains its stable ID");
         require(w.cell(0, 32, Layer::background).batch == 10, "both layers survive eviction and independent vertical/horizontal chunk boundaries");

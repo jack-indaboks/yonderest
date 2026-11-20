@@ -53,6 +53,7 @@ void load_recipes(Content& content, const std::filesystem::path& pack) {
                 output_in_ingredients |= i.x == r.output_x && i.y == r.output_y && !i.id.empty();
             }
             if (!output_in_ingredients) invalid(pack, "output must replace an ingredient: " + r.id);
+            r.order = int(content.recipes.size());
             content.recipes.push_back(r);
             r = {};
         } else invalid(pack, line);
@@ -80,11 +81,33 @@ void Content::load(const std::filesystem::path& pack) {
         Block id;
         Material m;
         if (!(in >> id >> m.color[0] >> m.color[1] >> m.color[2] >> m.solid >> std::quoted(m.name))) invalid(pack, line);
-        in >> m.appearance >> m.station >> m.tool >> m.requires_tool;
+        in >> m.station >> m.tool >> m.requires_tool;
         if (m.station == "-") m.station.clear();
         if (m.tool == "-") m.tool.clear();
         if (m.requires_tool == "-") m.requires_tool.clear();
+        auto name = id.substr(id.find(':') + 1) + ".png";
+        if (std::filesystem::exists(pack / "blocks" / name)) m.texture = pack / "blocks" / name;
+        if (std::filesystem::exists(pack / "held" / name)) m.held = pack / "held" / name;
         if (!blocks.emplace(id, m).second) throw std::runtime_error("Duplicate block ID: " + id);
+    }
+    if (std::filesystem::is_directory(pack / "images"))
+        for (const auto& entry : std::filesystem::directory_iterator(pack / "images"))
+            if (entry.path().extension() == ".png") images[entry.path().stem().string()] = entry.path();
+    for (const auto& line : lines(pack / "character.txt", true)) {
+        std::istringstream in(line);
+        std::string op, name;
+        in >> op >> name;
+        if (op == "bare") {
+            auto found = poses.find(name);
+            if (found == poses.end() || !(in >> found->second.bare)) invalid(pack, line);
+            continue;
+        }
+        Pose p;
+        if (op != "pose" || !(in >> p.image >> p.anchor >> p.hand_x >> p.hand_y)) invalid(pack, line);
+        if (!(in >> p.block_x >> p.block_y)) { p.block_x = p.hand_x + 1; p.block_y = p.hand_y - 3; }
+        for (int v : {p.anchor, p.hand_x, p.hand_y, p.block_x, p.block_y})
+            if (v < 0 || v > 15) invalid(pack, line);
+        poses[name] = p;
     }
     load_recipes(*this, pack);
     // Larger, more specific patterns win. Pack load order grants no priority.
@@ -125,9 +148,9 @@ Terrain load_terrain(const std::filesystem::path& pack) {
     std::istringstream in(joined);
     Terrain t;
     if (!(in >> t.version >> t.grass >> t.soil >> t.stone >> t.sand >> t.timber >> t.leaves)) invalid(pack, "terrain roles");
-    if (t.version == "expedition-v1") {
-        if (!(in >> t.clay >> t.ore)) invalid(pack, "expedition terrain roles");
-    } else if (t.version != "shelter-v1") invalid(pack, "unsupported terrain profile " + t.version);
+    int rank = profile_rank(t.version);
+    if (rank == 0) invalid(pack, "unsupported terrain profile " + t.version);
+    if (rank >= 2 && !(in >> t.clay >> t.ore)) invalid(pack, "expedition terrain roles");
     return t;
 }
 

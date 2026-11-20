@@ -46,7 +46,7 @@ The keyboard homebuilding prototype implements background construction, forgivin
 
 The trial uses held semicolon for sprint with an unchanged jump impulse, P for pause, held-J gathering and one placement per press. One small craftable pick and tool-gated ore make tool use testable without commissioning a progression system. [DESIGN.md](DESIGN.md) describes intended interaction; [README.md](README.md) describes the current executable, save migration and prototype choices. The author reports that unaided building is less awkward than anticipated. Falling still feels floaty despite acceptable jump height, and crafting did not get a playtest because the recipe reference was not discoverable enough. Wider inventory/storage and tool designs remain open.
 
-### Next pass: a readable first session
+### Readable first session refinement
 
 Start the game, discover a recipe, make a pick, gather copper and return to improve a backed home without consulting the README. This is a refinement of the existing playable loop, not another feature suite. The design is ready to guide the pass; it is not a claim that the changes below already run.
 
@@ -74,6 +74,47 @@ Review the actual result:
 The builder owns implementation, build/test/refinement and accurate build/run documentation. Surface meaningful implementation choices and their costs; bring back questions that change intended design before building on them. Return a runnable prototype, actual behavior, remaining limitations and a recommended next step. Passing checks do not substitute for looking at the result or for human playtesting.
 
 The assistant remains a deferred possibility, not a necessary upgrade to make early building tolerable. This pass excludes its implementation, character customization, full tool progression, RPG systems, health/hunger/stamina and other survival hazards, new fluid/climbing systems, and a general crafting rebalance.
+
+### Next refinement: JSON saves and content, less plumbing
+
+Bring saves and the existing declarative content in line with DESIGN's Save representation. This is the next bounded build pass; the current executable still uses SQLite and custom content syntaxes.
+
+- Saves, saving and the pause menu as DESIGN's Save representation describes them. The conversion preserves stable content identities, both block layers, quantities in unfinished assemblies and the distinction between saved and ungenerated territory.
+- Convert the author's existing world once, outside the game, leaving the SQLite source untouched.
+- Convert existing block, recipe, terrain, character-pose, module and flagship definitions to JSON through the same first-party/community content path. Preserve their meaning and stable identities, including module selection and generation opt-outs. Replace the old custom parsers rather than keeping parallel legacy syntax support.
+- Choose the JSON library as DESIGN's open item frames it, and report the choice and its integration costs.
+- Keep Lua implementation out of this pass; the later scripting API can use the C++ JSON path.
+- Carry the audit's concrete corrections into this round: put newly generated tree trunks in the background without rewriting saved terrain; remove construction's sticky facing state; prevent the content mirror from deleting its own source in an in-source build; correct zero-surplus crafting so it does not create carried stock; and stop carried icons from sharing a cache entry merely because their display names match.
+
+Review a saved home by reading and editing JSON, then loading and resaving it. Demonstrate that an absent optional property receives its intended meaning, an unfamiliar additive property does not reject the save, and ordinary field additions do not trigger a migration. Recheck the building/crafting loop, module selection and missing-content identity, chunk loading, save/resume and the converted home's continuity. Verify that converted content retains the same generation, recipes, art references and module behavior. Update build/run documentation to describe what actually runs. This is a JSON conversion and removal of unnecessary plumbing, not a general code audit, gameplay redesign or graph store.
+
+### Public readiness
+
+The repository becomes public once its front door is right, with or after the JSON conversion above: the public tip must not carry the SQLite dependency, though earlier history may show it. The author changes the visibility himself. This is a small pass over what a newcomer meets, not a release, an announcement or a claim that the game is further along than it is.
+
+The front door is what a first glance lands on: the repository's name, its one-line description and the top of the README. The game does not have to reach anything first. An early prototype that plainly says it is one is ready to be found.
+
+The pass brings together:
+
+- A README cut to what an arriving player needs: what the game is, how early it is, that it builds on Linux only for now, how to build and run it, the controls and the actual limitations. It opens with the plain statement of how early this is. Design reasoning stays in [DESIGN.md](DESIGN.md) and sequence stays here.
+- A one-line repository description, proposed by the builder and set by the author.
+- Tracked documents that agree with what runs and with each other. Everything tracked becomes public, this roadmap included: passes that have landed read as landed, and the art is described as one body under the MIT license, without distinguishing hand edits from generated work. `scratch/` remains ignored and its drafts are not part of the project.
+- A reading of the whole history and tree for what should not travel with a public repository: machine paths, session or conversation references, saved worlds, unintended identities, and anything belonging to another project. Both `archer_indaboks` and `jack_indaboks` are intended identities. Findings come back with their cost; whether any of them justifies rewriting history is a decision, not a cleanup step.
+
+Review the actual result:
+
+- Clone the repository into an empty directory, follow only the README, and reach a running game.
+- Read the name, the description and the top of the README cold. Within a minute they should say what this is and how early it is, and promise nothing the executable does not do.
+
+This pass excludes packaged releases, other platforms and any announcement.
+
+#### Order of work
+
+1. Land the JSON refinement and the concrete corrections above. Replace the database and custom syntaxes rather than adding parallel persistence paths. Implement DESIGN's file-writing behavior, not the old database transaction model reproduced in files. Retain meaningful content/module identities and generation provenance, not obsolete serialization machinery.
+2. Reconcile the tracked documents with the resulting executable. Mark landed refinements as landed, remove superseded instructions and private working references, and describe code, content and art as one MIT-licensed body. Cut the README to the newcomer-facing material above. Proposed repository description: "An early native 2D fantasy sandbox about exploring, building, and making places your own." The author sets the final description.
+3. Complete the contextual publication review of the current tree and reachable history, including tags, commit metadata and asset metadata. A filename or keyword inventory is not clearance. Return actual exposures and the cost of addressing them; do not rewrite history automatically or remove the two intended identities.
+4. From a fresh clone of the candidate commit, follow only the README to a running, rendered Linux game, without local saves, scratch assets or undocumented setup. Inspect the actual rendering and do a short disposable build/craft/save/reopen check. Use checks that answer the current changes, not an accumulating release-certification suite. This does not require the author to build an elaborate home or undertake extensive playtesting.
+5. Return the public-readiness recommendation, concrete unresolved matters and the candidate commit. The author decides any history treatment, sets the description and changes visibility. A local commit is not publication; this pass does not authorize a push or visibility change.
 
 ## 3. The connected universe
 

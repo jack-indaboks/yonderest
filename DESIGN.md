@@ -58,7 +58,7 @@ Sprint uses held semicolon while moving with A/D, with no double-tap gesture and
 
 Tool use and placement are explicitly distinct. J is the primary hitting or gathering action; K interacts with the addressed block. The empty hand can gather hand-gatherable blocks, while a breaking-focused tool breaks as its primary use. That consistency is the reason for trialing this mapping rather than making K a universal pickup action; playtesting, not button-name theory, decides its feel. A held building material does not inherit mining, and other tools can have different uses. The exact blocks requiring particular tools remain open; the prototype includes one craftable pick and one tool-gated material to make the distinction testable. Using a held object must not silently become placing it. Setting down a tool places that same block, which need not block movement. Broader tool actions and contextual empty-hand affordances remain open.
 
-Facing the work while backing away is the desired construction presentation, including across gaps while no placement action is held. This need not introduce a different movement mechanic: ordinary directional input can move the character while the active work determines their visual orientation. Ordinary gameplay should not demand that the player simultaneously steer their character and an independent target cursor. There is no world-target highlight: the addressed foreground, background or downward cell is not outlined or marked.
+Lateral movement turns the character in the direction of travel, including while building. Placement does not latch the character's facing or introduce a backing-away mode. Ordinary gameplay should not demand that the player simultaneously steer their character and an independent target cursor. There is no world-target highlight: the addressed foreground, background or downward cell is not outlined or marked.
 
 ### Quick hand selection
 
@@ -110,7 +110,7 @@ The assistant places from its own limited inventory. Two owners carrying blocks 
 
 ### Background construction
 
-An interactable, nonblocking background layer gives houses actual rear walls rather than an interior open to the sky. It can also let the character walk past a tree trunk or ladder while still being able to address it. Tree trunks are envisaged as background by default; canopies remain foreground. Layer membership, collision and climbing behavior are related but distinct questions. No depth-traversal simulation or pocket interior follows automatically from adding a background layer.
+An interactable, nonblocking background layer gives houses actual rear walls rather than an interior open to the sky. It can also let the character walk past a tree trunk or ladder while still being able to address it. Tree trunks belong in the background by default; canopies remain foreground. Layer membership, collision and climbing behavior are related but distinct questions. No depth-traversal simulation or pocket interior follows automatically from adding a background layer.
 
 Spatial crafting is foreground-only. Background blocks do not supply ingredients, required empty cells or stations, and rear-wall construction cannot complete a recipe. This is the chosen next-pass behavior and may remain permanent; that broader decision can wait for a later design pass.
 
@@ -148,7 +148,19 @@ Boundary information may include elevation, slope, geological layers, water leve
 
 World parameters and generated material definitions persist wherever they are needed to keep the world consistent. Save and resume preserve player position, inventory, and changes to the world.
 
-**Open:** Serialization, individual versus grouped chunk storage, save timing, and the boundary representation used when generation changes.
+### Save representation
+
+Saves use ordinary JSON plaintext, readable and editable outside the game. Persistence must support geographically bounded loading and writing without reading or rewriting the whole explored world. SQLite is not part of the intended persistence design; remove the prototype's dependency rather than retaining a second runtime database without a demonstrated need.
+
+The representation describes game meaning through named properties, stable content identifiers and explicit spatial structure, not C++ memory layouts or positional records wrapped in JSON strings. JSON is read into the game's own plain data where a file is loaded, and written from it where a file is saved; the rest of the game never handles JSON. No library that mirrors C++ structures into JSON automatically is used, since a code change would then silently change the save format. Adding an optional property must not require rewriting existing saves or advancing a global format version. Absence has a meaning appropriate to the feature: for example, a newly introduced background layer can be absent in older terrain and mean empty background. Removing a property must not leave a dummy positional slot. Unknown additive properties do not by themselves invalidate a save.
+
+The design should accommodate the intended game's evolving world and module data, not reproduce the prototype's serialization merely because it exists. This is not a promise that every future semantic change can be read without interpretation. Maintaining a migration ladder for every exploratory build and automatically backing up each upgrade are not requirements. A one-time conversion of the author's existing world is separate from permanent compatibility machinery and must leave its source untouched.
+
+JSON is data, not a graph-mirroring system. Separate occurrences of a material reference its definition by identity; they do not require shared live-node proxies or transclusion.
+
+Each world is one folder holding its world file, its player file and one file per chunk. Nothing is written per action: taking and placing only change memory. A changed chunk is written when it leaves memory, and everything changed is written when the window loses focus, on quit, and once a minute, only if something changed. Each file is replaced whole, so a crash can lose up to the last minute. A small "Saved" shows on the once-a-minute write. The pause menu offers Resume, Controls, Fullscreen and Quit, and Quit always saves. A save before something risky protects nothing if the next automatic write replaces it, so restore points are a possible future feature tied to hazards.
+
+**Open:** Recovery behavior for publication, the C++ JSON library and its integration, and the boundary representation used when generation changes. JsonCpp is the first parser candidate to evaluate; nlohmann/json is an alternative, not a second required dependency. A pinned, vendored implementation is acceptable; a single-header distribution is neither a requirement nor proof of simplicity.
 
 ## Materials, building, and crafting
 
@@ -201,6 +213,8 @@ The extension model has three tiers:
 - **Standard Lua scripts:** Gameplay extensions through the public game-facing API.
 - **Native C++ extensions or custom builds:** Deeper changes and separate games beyond the scripting API.
 
+Declarative content uses JSON as well as saves, rather than a collection of custom line syntaxes. Its familiar syntax and tooling lower the entry cost for modders, including those coming from Minecraft. Sharing a notation does not require content definitions and saved state to have identical structures or inherit Minecraft's game model. Images remain image assets, and behavior remains code; JSON does not replace either.
+
 Lua and declarative content are the portable extension mechanisms. Dynamic native loading on mobile and a universal stable native ABI are not requirements.
 
 Major features are separately selectable where practical. Players can decline a generation update without necessarily declining unrelated later content. Dependencies are explicit; arbitrary combinations are not promised compatible. A versioned flagship manifest defines the standard configuration.
@@ -219,7 +233,11 @@ The provisional interpretation is a common dirt-like fallback with ordinary coll
 
 The selected stack is C++20, SDL3, CMake, and standard Lua. Native Linux is the first platform; macOS, Windows, Android, and iOS are intended later targets.
 
+The build never downloads its own dependencies: everything it needs is installed on the machine or kept in the repository.
+
 C++ owns world state and API contracts. Lua runs gameplay scripts against a public interface rather than accessing engine internals directly. Script-visible references need defined lifetimes across chunk loading and unloading. LuaLS annotations describe the API; where practical they are generated from its binding definitions rather than maintained as a parallel type system.
+
+C++ handles JSON input/output and can expose the relevant data to Lua as tables and scalar values through the game API; scripting does not require a second JSON parser. The binding must distinguish JSON null from Lua nil, and empty JSON arrays from empty objects, where those distinctions matter. Their exact representation belongs to the later scripting interface, not an implementation of Lua in the present refinement.
 
 The world model and game logic remain independent of SDL-specific presentation details. The flagship uses pixel-art tiles and sprites. A terminal presentation using ASCII or Unicode is a possible optional edition, not the flagship. The world and its content are not defined in terms of either pixels or terminal glyphs.
 

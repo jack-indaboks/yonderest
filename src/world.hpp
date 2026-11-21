@@ -17,6 +17,13 @@ constexpr double tick_seconds = 1.0 / 120;
 
 // Empty string is empty space. Every material has a stable string ID.
 using Block = std::string;
+
+// Saved properties this build does not know, each as its name and its JSON text exactly
+// as read, so that rewriting a file keeps them. Only Save looks inside.
+struct Unrecognized {
+    std::vector<std::pair<std::string, std::string>> members;
+    bool operator==(const Unrecognized&) const = default;
+};
 struct Material {
     std::array<int, 3> color;
     bool solid;
@@ -27,6 +34,7 @@ struct Material {
     // Art from the defining pack: blocks/<name>.png, and held/<name>.png when
     // the object is drawn in the character's frame rather than as a carried block.
     std::filesystem::path texture{}, held{};
+    bool missing = false; // No pack defines this ID; drawn as unknown content.
 };
 
 struct Ingredient {
@@ -73,6 +81,7 @@ struct Terrain {
     std::string version;
     Block grass, soil, stone, sand, timber, leaves;
     Block clay, ore;
+    Unrecognized unknown, unknown_materials;
 };
 Terrain load_terrain(const std::filesystem::path& pack);
 // Known generation profiles in order: shelter-v1, expedition-v1, expedition-v2, expedition-v3.
@@ -92,6 +101,7 @@ struct Settings {
     int columns = 32;
     int rows = 8;
     Terrain terrain;
+    Unrecognized unknown{};
     int width() const { return columns * chunk_size; }
     int height() const { return rows * chunk_size; }
 };
@@ -106,6 +116,7 @@ struct Cell {
     int quantity = 1;
     bool placed = false;
     int batch = 1; // A workbench's setting, independent of the material quantity.
+    Unrecognized unknown{};
     bool operator==(const Cell&) const = default;
 };
 
@@ -120,6 +131,7 @@ struct Chunk {
     std::string profile;
     // Empty means fully settled. Otherwise one value per cell, row-major.
     std::vector<std::uint8_t> settling;
+    Unrecognized unknown{};
     bool dirty = false; // Changed since it was loaded or saved; a new chunk is changed.
     Cell& at(int x, int y) { return tiles[y * chunk_size + x]; }
     const Cell& at(int x, int y) const { return tiles[y * chunk_size + x]; }
@@ -140,6 +152,7 @@ struct Player {
     std::vector<Block> ready;
     int facing = 1; // -1 left, 0 background, 1 right.
     bool down = false; // S held: crawling, aiming beneath the feet. The body stays a block tall.
+    Unrecognized unknown{};
 };
 
 enum class Layer { foreground, background };

@@ -229,7 +229,7 @@ public:
     }
     void block(const Material& m, int x, int y, SDL_FlipMode flip = SDL_FLIP_NONE, Color tint = {255, 255, 255}) {
         if (!m.texture.empty()) return draw(image(m.texture), {x, y, tile, tile}, flip, tint);
-        if (m.name == "Unknown") return draw(unknown, {x, y, tile, tile}, flip, tint);
+        if (m.missing) return draw(unknown, {x, y, tile, tile}, flip, tint);
         // A pack without art still shows its declared colour.
         auto [r, g, b] = m.color;
         fill({x, y, tile, tile}, {Uint8(r * tint.r / 255), Uint8(g * tint.g / 255), Uint8(b * tint.b / 255), tint.a});

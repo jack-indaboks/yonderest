@@ -2,8 +2,10 @@
 
 #include <json/reader.h>
 #include <charconv>
+#include <algorithm>
 #include <cstdio>
 #include <cmath>
+#include <memory>
 #include <fstream>
 #include <limits>
 #include <sstream>
@@ -13,12 +15,12 @@ namespace yonder {
 
 Field Field::operator[](const char* key) const {
     if (present() && !value.isObject()) fail("must be an object");
-    return Field(present() ? value[key] : value, where + "." + key);
+    return Field(present() ? value[key] : value, where + "." + key, source);
 }
 
 Field Field::operator[](Json::ArrayIndex index) const {
     if (!value.isArray() || index >= value.size()) fail("has no item " + std::to_string(index));
-    return Field(value[index], where + "[" + std::to_string(index) + "]");
+    return Field(value[index], where + "[" + std::to_string(index) + "]", source);
 }
 
 Json::ArrayIndex Field::size() const {
@@ -61,6 +63,19 @@ bool Field::flag_or(bool fallback) const {
     return value.asBool();
 }
 
+Unrecognized Field::rest(std::initializer_list<std::string_view> known) const {
+    Unrecognized result;
+    std::vector<std::pair<std::ptrdiff_t, std::string>> found;
+    for (const auto& name : keys())
+        if (std::ranges::find(known, std::string_view(name)) == known.end()) found.emplace_back(value[name].getOffsetStart(), name);
+    std::ranges::sort(found);
+    for (const auto& [start, name] : found) {
+        const auto& member = value[name];
+        result.members.emplace_back(name, source.substr(start, member.getOffsetLimit() - start));
+    }
+    return result;
+}
+
 void Field::fail(const std::string& what) const {
     throw std::runtime_error(where + " " + what);
 }
@@ -68,12 +83,16 @@ void Field::fail(const std::string& what) const {
 JsonFile::JsonFile(const std::filesystem::path& file) : name(file.string()) {
     std::ifstream in(file, std::ios::binary);
     if (!in) throw std::runtime_error("Cannot read " + name);
+    std::ostringstream all;
+    all << in.rdbuf();
+    text = all.str();
+    if (text.starts_with("\xEF\xBB\xBF")) text.erase(0, 3); // An editor's byte order mark.
     // Plain JSON: no comments, trailing commas or repeated keys.
     Json::CharReaderBuilder builder;
     Json::CharReaderBuilder::strictMode(&builder.settings_);
-    builder["skipBom"] = true;
+    std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
     std::string errors;
-    if (!Json::parseFromStream(builder, in, &value, &errors))
+    if (!reader->parse(text.data(), text.data() + text.size(), &value, &errors))
         throw std::runtime_error(name + " is not valid JSON: " + errors);
 }
 
@@ -165,6 +184,15 @@ JsonWriter& JsonWriter::null() {
     return *this;
 }
 
+JsonWriter& JsonWriter::rest(const Unrecognized& members) {
+    for (const auto& [name, json] : members.members) {
+        key(name);
+        separate();
+        out += json;
+    }
+    return *this;
+}
+
 std::string JsonWriter::finish() {
     if (!levels.empty()) throw std::logic_error("Unclosed JSON container");
     return out + '\n';
@@ -200,6 +228,8 @@ Terrain read_terrain(const Field& field) {
         if (i < shelter_roles || rank >= profile_rank("expedition-v1")) t.*role = materials[name].text();
         else t.*role = materials[name].text_or("");
     }
+    t.unknown = field.rest({"generation", "materials"});
+    t.unknown_materials = materials.rest({"grass", "soil", "stone", "sand", "timber", "leaves", "clay", "ore"});
     return t;
 }
 
@@ -207,7 +237,7 @@ void write_terrain(JsonWriter& out, const Terrain& t) {
     out.object().key("generation").text(t.version).key("materials").object();
     for (auto [name, role] : roles)
         if (!(t.*role).empty()) out.key(name).text(t.*role);
-    out.close().close();
+    out.rest(t.unknown_materials).close().rest(t.unknown).close();
 }
 
 }

@@ -18,7 +18,8 @@ namespace yonder {
 // Absent and null are the same: an optional property takes its stated default.
 class Field {
 public:
-    Field(const Json::Value& value, std::string where) : value(value), where(std::move(where)) {}
+    Field(const Json::Value& value, std::string where, const std::string& source)
+        : value(value), where(std::move(where)), source(source) {}
     bool present() const { return !value.isNull(); }
     Field operator[](const char* key) const;
     Field operator[](Json::ArrayIndex index) const;
@@ -33,20 +34,24 @@ public:
     std::uint64_t whole() const;
     double number() const;
     bool flag_or(bool fallback) const;
+    // An object's other properties, in file order, as their original text.
+    Unrecognized rest(std::initializer_list<std::string_view> known) const;
     [[noreturn]] void fail(const std::string& what) const;
 
 private:
     const Json::Value& value;
     std::string where;
+    const std::string& source;
 };
 
 // Owns a parsed file; `root()` reads it.
 class JsonFile {
 public:
     explicit JsonFile(const std::filesystem::path& file);
-    Field root() const { return Field(value, name); }
+    Field root() const { return Field(value, name, text); }
 
 private:
+    std::string text;
     Json::Value value;
     std::string name;
 };
@@ -65,6 +70,8 @@ public:
     JsonWriter& number(double value);
     JsonWriter& flag(bool value);
     JsonWriter& null();
+    // Properties kept from a file, written back as they were read.
+    JsonWriter& rest(const Unrecognized& members);
     std::string finish();
 
 private:

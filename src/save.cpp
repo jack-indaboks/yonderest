@@ -25,7 +25,7 @@ std::string player_json(const Player& p) {
     for (const auto& [id, count] : p.inventory) out.key(id).integer(count);
     out.close().key("ready").array(true);
     for (const auto& id : p.ready) out.text(id);
-    out.close().close();
+    out.close().rest(p.unknown).close();
     return out.finish();
 }
 
@@ -66,6 +66,7 @@ std::optional<Settings> Save::settings() const {
     if (root["chunk_size"].integer(1, 1 << 16) != chunk_size)
         root["chunk_size"].fail("must be " + std::to_string(chunk_size) + " in this build");
     s.terrain = read_terrain(root["terrain"]);
+    s.unknown = root.rest({"seed", "columns", "rows", "chunk_size", "terrain"});
     return s;
 }
 
@@ -74,7 +75,7 @@ void Save::write_settings(const Settings& s) {
     out.object().key("seed").whole(s.seed).key("columns").integer(s.columns).key("rows").integer(s.rows)
         .key("chunk_size").integer(chunk_size).key("terrain");
     write_terrain(out, s.terrain);
-    out.close();
+    out.rest(s.unknown).close();
     replace_file(folder / "world.json", out.finish());
 }
 
@@ -99,6 +100,7 @@ std::optional<Player> Save::player() {
     auto ready = root["ready"];
     if (ready.size() > 12) ready.fail("can hold at most twelve objects");
     for (Json::ArrayIndex i = 0; i < ready.size(); ++i) p.ready.push_back(ready[i].text());
+    p.unknown = root.rest({"x", "y", "facing", "held", "last_held", "inventory", "ready"});
     drop_empty(p); // An emptied entry, or readiness without stock, is not carried.
     player_text = player_json(p);
     return p;
@@ -133,6 +135,7 @@ std::optional<Chunk> Save::chunk(int x, int y) const {
             cell.quantity = int(entry["quantity"].integer_or(1, 1, std::numeric_limits<int>::max()));
             cell.placed = entry["placed"].flag_or(false);
             cell.batch = int(entry["batch"].integer_or(1, 1, std::numeric_limits<int>::max()));
+            cell.unknown = entry.rest({"block", "quantity", "placed", "batch"});
         }
         palette.push_back(cell);
     }
@@ -153,6 +156,7 @@ std::optional<Chunk> Save::chunk(int x, int y) const {
     grid("background", layer(c.background));
     if (root["settling"].present()) c.settling.resize(c.tiles.size());
     grid("settling", [&](const Field& f, int i) { c.settling[i] = std::uint8_t(f.integer(0, settle_extent)); });
+    c.unknown = root.rest({"generation", "palette", "foreground", "background", "settling"});
     return c;
 }
 
@@ -180,7 +184,7 @@ void Save::write_chunk(int x, int y, const Chunk& c) {
             if (cell->quantity != 1) out.key("quantity").integer(cell->quantity);
             if (cell->placed) out.key("placed").flag(true);
             if (cell->batch != 1) out.key("batch").integer(cell->batch);
-            out.close();
+            out.rest(cell->unknown).close();
         }
         out.close();
     }
@@ -197,7 +201,7 @@ void Save::write_chunk(int x, int y, const Chunk& c) {
     for (int l = 0; l < 2; ++l)
         if (layers[l]) rows(names[l], [&](int i) { return grids[l][i]; });
     if (!c.settling.empty()) rows("settling", [&](int i) { return int(c.settling[i]); });
-    out.close();
+    out.rest(c.unknown).close();
     replace_file(chunk_file(folder, x, y), out.finish());
 }
 

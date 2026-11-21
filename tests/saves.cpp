@@ -86,7 +86,8 @@ void editing(const std::filesystem::path& folder, const Settings& settings) {
     write(chunk, replaced(replaced(text, "{\"block\": \"base:timber\", \"placed\": true}",
                                    "{\"block\": \"base:stone\", \"placed\": true, \"moss\": 3}"),
                           "\"generation\"", "\"weather\": {\"rain\": true},\n  \"generation\""));
-    write(folder / "world.json", replaced(read(folder / "world.json"), "\"seed\"", "\"lighting\": \"soft\", \"seed\""));
+    write(folder / "world.json", replaced(replaced(read(folder / "world.json"), "\"seed\"", "\"lighting\": \"soft\", \"seed\""),
+                                          "\"grass\"", "\"ice\": \"base:stone\", \"grass\""));
     // A minimal player: everything optional is absent.
     write(folder / "player.json", "{\"x\": 40, \"y\": 39, \"inventory\": {\"base:soil\": 2, \"base:sand\": 0}, \"mood\": \"glad\"}");
     auto world_text = read(folder / "world.json");
@@ -95,21 +96,37 @@ void editing(const std::filesystem::path& folder, const Settings& settings) {
         Save save(folder);
         World world(save, content, *save.settings());
         auto p = *save.player();
-        require(world.cell(40, 40) == Cell{"base:stone", 1, true}, "a hand-edited block loads as edited");
+        require(world.cell(40, 40).id == "base:stone" && world.cell(40, 40).placed, "a hand-edited block loads as edited");
         require(world.block(40, 40, Layer::background).empty(), "absent background means empty background");
         require(p.facing == 1 && p.selected.empty() && p.ready.empty() && p.inventory == std::map<Block, std::int64_t>{{"base:soil", 2}},
                 "absent facing, hand and readiness take their defaults; an emptied entry is not carried");
         require(!world.save_changes(p), "loading writes nothing back: no migration, no version to advance");
     }
     require(read(folder / "world.json") == world_text && read(chunk) == edited_chunk, "unchanged files stay byte for byte as edited");
-    {
+    // Rewrite every file: a changed chunk, a moved player, the world settings.
+    auto rewrite = [&](double step) {
         Save save(folder);
+        save.write_settings(*save.settings());
         World world(save, content, *save.settings());
         auto p = *save.player();
-        world.set(41, 40, "base:sand");
-        world.save_changes(p);
-    }
-    require(read(chunk).find("base:stone") != std::string::npos, "resaving a changed chunk keeps the hand edit");
+        p.x += step;
+        world.set(41, 40, step > 0 ? "base:sand" : "base:soil");
+        require(world.save_changes(p), "a change is written");
+    };
+    rewrite(1);
+    auto kept = [&](const std::filesystem::path& file, const std::string& property) {
+        require(read(file).find(property) != std::string::npos, file.filename().string() + " keeps " + property + " through a rewrite");
+    };
+    kept(chunk, "{\"block\": \"base:stone\", \"placed\": true, \"moss\": 3}");
+    kept(chunk, "\"weather\": {\"rain\": true}");
+    kept(folder / "world.json", "\"lighting\": \"soft\"");
+    kept(folder / "world.json", "\"ice\": \"base:stone\"");
+    kept(folder / "player.json", "\"mood\": \"glad\"");
+    auto first = read(chunk) + read(folder / "world.json") + read(folder / "player.json");
+    rewrite(-1);
+    rewrite(1);
+    require(read(chunk) + read(folder / "world.json") + read(folder / "player.json") == first,
+            "kept properties settle: rewriting the same state again gives the same files");
     {
         Save save(folder);
         bool refused = false;

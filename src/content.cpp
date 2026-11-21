@@ -133,7 +133,11 @@ void Content::validate() const {
 
 const Material& Content::material(const Block& id) const {
     static const Material air{{0, 0, 0}, false, "Air"};
-    static const Material missing{{151, 104, 88}, true, "Unknown"};
+    static const Material missing = [] {
+        Material m{{151, 104, 88}, true, "Unknown"};
+        m.missing = true;
+        return m;
+    }();
     if (id.empty()) return air;
     auto found = blocks.find(id);
     return found == blocks.end() ? missing : found->second;

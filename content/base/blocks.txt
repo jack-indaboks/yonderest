@@ -1,7 +1,0 @@
-# Stable ID           R   G   B  Solid  Display name
-base:soil           133  85  64    1    "Earth"
-base:grass           86 139  79    1    "Moss"
-base:stone           99 111 126    1    "Stone"
-base:sand           201 174 111    1    "Sand"
-base:timber         140 105  65    1    "Timber"
-base:leaves          53 108  79    1    "Leaves"

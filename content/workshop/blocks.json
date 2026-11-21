@@ -1,0 +1,9 @@
+[
+  {"id": "workshop:planks", "name": "Planks", "color": [183, 131, 76]},
+  {"id": "workshop:workbench", "name": "Workbench", "color": [160, 109, 64], "station": "workbench"},
+  {"id": "workshop:forge", "name": "Forge", "color": [78, 82, 94], "station": "forge"},
+  {"id": "workshop:bricks", "name": "Bricks", "color": [171, 81, 62]},
+  {"id": "workshop:glass", "name": "Glass", "color": [93, 168, 182]},
+  {"id": "workshop:copper", "name": "Copper tiles", "color": [194, 118, 77]},
+  {"id": "workshop:pick", "name": "Stone pick", "color": [151, 162, 174], "solid": false, "tool": "pick"}
+]

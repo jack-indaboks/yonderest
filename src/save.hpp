@@ -3,29 +3,31 @@
 #include "world.hpp"
 #include <optional>
 
-struct sqlite3;
-
 namespace yonder {
 
+// A world is one folder: world.json, player.json and chunks/x<column>-y<row>.json.
+// A chunk's file exists exactly when its territory has been generated and saved.
+// Files are read when needed and each is replaced whole when written; only one
+// running game may hold a world.
 class Save {
 public:
-    explicit Save(const std::filesystem::path& path);
+    explicit Save(const std::filesystem::path& folder);
     ~Save();
     Save(const Save&) = delete;
     Save& operator=(const Save&) = delete;
 
     std::optional<Settings> settings() const;
-    Player player();
-    void initialize(const Settings& settings);
-    // Back up an earlier format before committing its upgrade to the current one.
-    void upgrade(const Settings& settings);
-    std::optional<Chunk> chunk(int x, int y);
-    void stage(int x, int y, const Chunk& chunk);
-    void checkpoint(const Player& player);
+    void write_settings(const Settings& settings);
+    std::optional<Player> player();
+    // Writes only if the player differs from what was last read or written. Returns whether it wrote.
+    bool write_player(const Player& player);
+    std::optional<Chunk> chunk(int x, int y) const;
+    void write_chunk(int x, int y, const Chunk& chunk);
 
 private:
-    sqlite3* db = nullptr;
-    std::filesystem::path path;
+    std::filesystem::path folder;
+    int lock = -1;
+    std::string player_text;
 };
 
 }

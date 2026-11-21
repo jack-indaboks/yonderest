@@ -1,0 +1,13 @@
+{
+  "generation": "expedition-v3",
+  "materials": {
+    "grass": "base:grass",
+    "soil": "base:soil",
+    "stone": "base:stone",
+    "sand": "base:sand",
+    "timber": "base:timber",
+    "leaves": "base:leaves",
+    "clay": "expedition:clay",
+    "ore": "expedition:copper_ore"
+  }
+}

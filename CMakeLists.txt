@@ -6,11 +6,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(SDL3 3.4 REQUIRED CONFIG)
-find_package(SQLite3 REQUIRED)
+# JsonCpp's own CMake package is missing from some distributions; pkg-config finds it everywhere.
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(JsonCpp REQUIRED IMPORTED_TARGET jsoncpp)
 
-add_library(world src/content.cpp src/terrain.cpp src/world.cpp src/play.cpp src/craft.cpp src/save.cpp)
-target_include_directories(world PUBLIC src PRIVATE ${SQLite3_INCLUDE_DIRS})
-target_link_libraries(world PRIVATE ${SQLite3_LIBRARIES})
+add_library(world src/json.cpp src/content.cpp src/terrain.cpp src/world.cpp src/play.cpp src/craft.cpp src/save.cpp)
+target_include_directories(world PUBLIC src)
+target_link_libraries(world PRIVATE PkgConfig::JsonCpp)
 target_compile_options(world PRIVATE -Wall -Wextra -Wpedantic)
 
 add_library(desktop src/app.cpp)
@@ -21,24 +23,31 @@ add_executable(yonderest src/main.cpp)
 target_link_libraries(yonderest PRIVATE desktop)
 
 # The build's content is a mirror of the source tree: deletions carry over too.
-file(GLOB_RECURSE content_files CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/content/*)
-# Rewritten only when membership changes, so a removed file still triggers the mirror.
-file(CONFIGURE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/content.list CONTENT "${content_files}")
-add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/content.stamp
-    COMMAND ${CMAKE_COMMAND} -E rm -rf ${CMAKE_CURRENT_BINARY_DIR}/content
-    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/content ${CMAKE_CURRENT_BINARY_DIR}/content
-    COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_BINARY_DIR}/content.stamp
-    DEPENDS ${content_files} ${CMAKE_CURRENT_BINARY_DIR}/content.list
-    COMMENT "Mirroring content")
-add_custom_target(content ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/content.stamp)
+# An in-source build already has its content beside the executable, and mirroring
+# would delete the source itself.
+file(REAL_PATH ${CMAKE_CURRENT_SOURCE_DIR} source_dir)
+file(REAL_PATH ${CMAKE_CURRENT_BINARY_DIR} binary_dir)
+if(source_dir STREQUAL binary_dir)
+    add_custom_target(content)
+else()
+    file(GLOB_RECURSE content_files CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/content/*)
+    # Rewritten only when membership changes, so a removed file still triggers the mirror.
+    file(CONFIGURE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/content.list CONTENT "${content_files}")
+    add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/content.stamp
+        COMMAND ${CMAKE_COMMAND} -E rm -rf ${CMAKE_CURRENT_BINARY_DIR}/content
+        COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR}/content ${CMAKE_CURRENT_BINARY_DIR}/content
+        COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_BINARY_DIR}/content.stamp
+        DEPENDS ${content_files} ${CMAKE_CURRENT_BINARY_DIR}/content.list
+        COMMENT "Mirroring content")
+    add_custom_target(content ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/content.stamp)
+endif()
 add_dependencies(yonderest content)
 
 include(CTest)
 if(BUILD_TESTING)
-    add_executable(migration-test tests/migration.cpp)
-    target_include_directories(migration-test PRIVATE ${SQLite3_INCLUDE_DIRS})
-    target_link_libraries(migration-test PRIVATE world ${SQLite3_LIBRARIES})
-    add_test(NAME migration COMMAND migration-test ${CMAKE_CURRENT_SOURCE_DIR}/content)
+    add_executable(saves-test tests/saves.cpp)
+    target_link_libraries(saves-test PRIVATE world)
+    add_test(NAME saves COMMAND saves-test ${CMAKE_CURRENT_SOURCE_DIR}/content)
     add_executable(keyboard-test tests/keyboard.cpp)
     target_link_libraries(keyboard-test PRIVATE world)
     add_test(NAME keyboard COMMAND keyboard-test ${CMAKE_CURRENT_SOURCE_DIR}/content)

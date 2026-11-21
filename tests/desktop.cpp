@@ -43,7 +43,7 @@ void tap(SDL_Keycode code) {
 int main(int argc, char** argv) {
     auto scratch = std::filesystem::temp_directory_path() / ("yonderest-desktop-" + std::to_string(getpid()));
     std::filesystem::create_directories(scratch);
-    auto save_path = scratch / "world.sqlite3";
+    auto save_path = scratch / "world";
     try {
         require(argc >= 2, "expected content root");
         bool building = argc >= 3 && std::string(argv[2]) == "build";
@@ -57,10 +57,10 @@ int main(int argc, char** argv) {
             settings.seed = 42;
             settings.terrain = load_terrain(std::filesystem::path(content) / "expedition");
             Content blocks;
-            for (const auto& [id, version] : load_manifest(std::filesystem::path(content) / "flagship.txt").packs)
+            for (const auto& [id, version] : load_manifest(std::filesystem::path(content) / "flagship.json").packs)
                 blocks.load(std::filesystem::path(content) / id);
             Save fixture(save_path);
-            fixture.initialize(settings);
+            fixture.write_settings(settings);
             World world(fixture, blocks, settings);
             for (int x = 6; x <= 20; ++x) {
                 for (int y = 23; y < 30; ++y) world.set(x, y, {});
@@ -94,7 +94,7 @@ int main(int argc, char** argv) {
                 p.inventory["base:timber"] = 2;
                 p.inventory["workshop:pick"] = 1;
             }
-            world.checkpoint(p);
+            world.save_changes(p);
         }
         std::string failure;
         require(SDL_Init(SDL_INIT_EVENTS), "initialize event observer");
@@ -149,7 +149,7 @@ int main(int argc, char** argv) {
                     key(SDLK_S, false);
                     key(SDLK_W, true); tap(SDLK_L); key(SDLK_W, false);
                     tap(SDLK_D); tap(SDLK_L); // place a floating foreground block to the right
-                    key(SDLK_A, true); // back away with Place released, keeping work-facing
+                    key(SDLK_A, true); // walk away: A turns the character, placing or not
                     std::this_thread::sleep_for(200ms);
                     key(SDLK_A, false);
                 } else {
@@ -199,7 +199,7 @@ int main(int argc, char** argv) {
         require(failure.empty(), failure);
         {
             Save result(save_path);
-            auto p = result.player();
+            auto p = *result.player();
             auto settings = *result.settings();
             Content blocks;
             blocks.load(std::filesystem::path(content) / "base");
@@ -230,8 +230,8 @@ int main(int argc, char** argv) {
                 require(world.block(10, 27, Layer::background) == "base:soil", "standing on that scaffold reaches the rear wall above");
                 require(world.block(11, 27) == "base:soil" && world.block(11, 28).empty() && world.block(10, 27).empty(),
                         "direct forward placement can hang in midair with no adjacent foreground blocks");
-                require(p.inventory.at("base:soil") == 8 && p.x < 9.5 && p.y >= 27 && p.facing == 1,
-                        "held Place does not repeat; backing off the scaffold keeps work-facing even across a gap with L released");
+                require(p.inventory.at("base:soil") == 8 && p.x < 9.5 && p.y >= 27 && p.facing == -1,
+                        "held Place does not repeat; walking off after placing faces the way walked, with no remembered work-facing");
             } else {
                 require(world.block(10, 30).empty() && world.block(10, 30, Layer::background) == "base:soil", "keyboard gathering and facing-based rear placement change the intended layers");
                 require(p.x > 10.35 && p.x < 11.2, "walking remains active while choosing");

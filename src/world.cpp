@@ -90,15 +90,20 @@ void World::retain(int left, int top, int right, int bottom) {
     for (auto it = chunks.begin(); it != chunks.end();) {
         auto [x, y] = it->first;
         if (wrap(x - first, settings.columns) <= last - first && y >= top && y <= bottom) { ++it; continue; }
-        if (it->second.dirty) save.stage(it->first.first, it->first.second, it->second);
+        if (it->second.dirty) save.write_chunk(it->first.first, it->first.second, it->second);
         it = chunks.erase(it);
     }
 }
 
-void World::checkpoint(const Player& player) {
-    for (auto& [key, c] : chunks) if (c.dirty) save.stage(key.first, key.second, c);
-    save.checkpoint(player);
-    for (auto& [key, c] : chunks) c.dirty = false;
+bool World::save_changes(const Player& player) {
+    bool wrote = false;
+    for (auto& [key, c] : chunks)
+        if (c.dirty) {
+            save.write_chunk(key.first, key.second, c);
+            c.dirty = false;
+            wrote = true;
+        }
+    return save.write_player(player) || wrote;
 }
 
 bool intersects(World& world, double x, double y) {

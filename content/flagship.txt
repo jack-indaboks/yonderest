@@ -1,6 +1,0 @@
-# Native flagship configuration. Packs share the public loader.
-yonderest 2
-pack base 1
-pack expedition 1
-pack workshop 1
-terrain expedition

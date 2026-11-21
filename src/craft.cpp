@@ -91,7 +91,8 @@ std::optional<ActionResult> craft(World& world, Player& p, int changed_x, int ch
             for (const auto& i : r.shape) if (!i.id.empty()) world.set(x + i.x, y + i.y, {});
             auto output = std::int64_t(r.amount) * a->quantity;
             world.put(x + r.output_x, y + r.output_y, Cell{r.output, 1, true});
-            p.inventory[r.output] += output - 1;
+            // One result stands in the world; only a surplus is carried.
+            if (output > 1) p.inventory[r.output] += output - 1;
             return ActionResult{true, "Made " + world.content.material(r.output).name + " x" + std::to_string(output)};
         }
     return {};

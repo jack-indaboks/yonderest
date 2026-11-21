@@ -37,7 +37,7 @@ Options options(int argc, const char* const* argv) {
         std::string arg = argv[i];
         if (arg == "--help") {
             std::cout << "Yonderest\n"
-                         "  --save FILE       Separate SQLite world (default: SDL user data/yonderest)\n"
+                         "  --save DIR        World folder, created if new (default: SDL user data/yonderest/world)\n"
                          "  --seed NUMBER     Seed for a NEW save only\n"
                          "  --content DIR     Content root (manifest and packs)\n"
                          "  --manifest FILE   Pack and terrain configuration\n"
@@ -107,7 +107,7 @@ Rect inventory_action(int i) {
     for (int k = 0; k < i; ++k) x += widths[k] + 6;
     return {x, inventory_panel.y + inventory_panel.h - 26, widths[i], 16};
 }
-constexpr int menu_items = 5;
+constexpr int menu_items = 4;
 const Rect menu_panel{(screen_width - 150) / 2, 92, 150, 22 + menu_items * 18 + 8};
 Rect menu_item(int i) { return {menu_panel.x + 8, menu_panel.y + 22 + i * 18, menu_panel.w - 16, 16}; }
 
@@ -299,7 +299,7 @@ public:
         if (p.selected.empty()) return place(bare, tile, 0, 0);
         place(holding, tile, 0, 0);
         const auto& m = content.material(p.selected);
-        if (m.held.empty()) place(carry(m), 8, pose->block_x, pose->block_y);
+        if (m.held.empty()) place(carry(p.selected, m), 8, pose->block_x, pose->block_y);
         else if (swinging) place(turned(m, idle), 2 * tile, dx - tile / 2, dy - tile / 2);
         else place(canvas(m.held), tile, dx, dy);
         place(grip, tile, dx, dy);
@@ -448,7 +448,7 @@ public:
     void menu(int index, bool fullscreen, float mx, float my) {
         panel(menu_panel);
         centered({menu_panel.x, menu_panel.y + 4, menu_panel.w, 14}, "Paused");
-        const char* items[]{"Resume", "Controls", "Save", fullscreen ? "Windowed" : "Fullscreen", "Save and quit"};
+        const char* items[]{"Resume", "Controls", fullscreen ? "Windowed" : "Fullscreen", "Quit"};
         for (int i = 0; i < menu_items; ++i) {
             auto r = menu_item(i);
             if (i == index) fill(r, {60, 52, 82});
@@ -501,7 +501,8 @@ public:
 private:
     struct Image { SDL_Surface* surface; SDL_Texture* texture; };
     std::map<std::filesystem::path, Image> images;
-    std::map<std::filesystem::path, SDL_Texture*> carried, turns;
+    std::map<Block, SDL_Texture*> carried;
+    std::map<std::filesystem::path, SDL_Texture*> turns;
     struct PoseArt { const Pose* pose; SDL_Texture *holding, *bare; };
     std::map<std::string, PoseArt> poses;
     SDL_Texture *grip = nullptr, *font = nullptr, *unknown = nullptr;
@@ -554,10 +555,10 @@ private:
     }
 
     // A carried block: one fixed 8x8 icon, a 6x6 sampling of the tile inside the character's outline colour.
-    SDL_Texture* carry(const Material& m) {
+    // Each block ID has its own, whatever its display name.
+    SDL_Texture* carry(const Block& id, const Material& m) {
         constexpr int size = 8, inner = size - 2;
-        auto key = m.texture.empty() ? std::filesystem::path("#" + m.name) : m.texture;
-        auto found = carried.find(key);
+        auto found = carried.find(id);
         if (found != carried.end()) return found->second;
         SDL_Surface* small = SDL_CreateSurface(size, size, SDL_PIXELFORMAT_RGBA32);
         if (!small) throw std::runtime_error(SDL_GetError());
@@ -580,7 +581,7 @@ private:
         SDL_DestroySurface(small);
         if (!texture) throw std::runtime_error(SDL_GetError());
         SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
-        return carried.emplace(key, texture).first->second;
+        return carried.emplace(id, texture).first->second;
     }
 };
 
@@ -590,11 +591,11 @@ int run_game(Options o) {
     if (o.save.empty()) {
         char* path = SDL_GetPrefPath(nullptr, "yonderest");
         if (!path) throw std::runtime_error(SDL_GetError());
-        o.save = std::filesystem::path(path) / "world.sqlite3";
+        o.save = std::filesystem::path(path) / "world";
         SDL_free(path);
     }
     Content content;
-    auto manifest = load_manifest(o.manifest.empty() ? o.content / "flagship.txt" : o.manifest);
+    auto manifest = load_manifest(o.manifest.empty() ? o.content / "flagship.json" : o.manifest);
     for (const auto& [id, version] : manifest.packs) {
         content.load(o.content / id);
         auto found = content.modules.find(id);
@@ -618,19 +619,19 @@ int run_game(Options o) {
             settings.terrain.clay = terrain.clay;
             settings.terrain.ore = terrain.ore;
             std::cout << "New territory: " << terrain.version << "; saved chunks stay unchanged.\n";
+            save.write_settings(settings);
         }
-        save.upgrade(settings);
         if (o.seed && *o.seed != settings.seed) std::cout << "Existing save: using its seed, not --seed.\n";
     } else {
         settings.seed = o.seed.value_or(std::uint64_t(std::chrono::system_clock::now().time_since_epoch().count()));
         settings.terrain = terrain;
         if (o.keep_generation) settings.terrain.version = "shelter-v1";
-        save.initialize(settings);
+        save.write_settings(settings);
     }
     World world(save, content, settings);
-    Player player = saved_settings ? save.player() : spawn(world);
-    std::cout << "Save: " << o.save << "\nSeed: " << settings.seed << '\n';
-    world.checkpoint(player);
+    auto saved_player = save.player();
+    Player player = saved_player ? *saved_player : spawn(world);
+    std::cout << "World: " << o.save << "\nSeed: " << settings.seed << '\n';
 
     Hands hands;
     int side = player.facing ? player.facing : 1; // The side last faced, for S from the rear wall.
@@ -639,7 +640,7 @@ int run_game(Options o) {
     bool left = false, right = false, sprint = false, mining = false, jump = false;
     int recipe_index = 0, inventory_index = 0, inventory_focus = -1, menu_index = 0;
     float mouse_x = -1, mouse_y = -1;
-    double previous = SDL_GetTicksNS() / 1e9, accumulated = 0, autosave = previous, next_action = 0;
+    double previous = SDL_GetTicksNS() / 1e9, accumulated = 0, last_save = previous, next_action = 0;
     double travelled = 0, swing_until = 0;
     std::string toast;
     double toast_until = 0;
@@ -666,15 +667,13 @@ int run_game(Options o) {
         if (next == Dialog::menu) menu_index = 0;
         if (next == Dialog::inventory) { inventory_index = 0; inventory_focus = -1; }
     };
-    auto save_now = [&] { world.checkpoint(player); notify("Saved"); };
     auto fullscreen = [&] { return (SDL_GetWindowFlags(view.window) & SDL_WINDOW_FULLSCREEN) != 0; };
     auto choose = [&](int item) {
         switch (item) {
         case 0: dialog = Dialog::none; break;
         case 1: dialog = Dialog::controls; break;
-        case 2: save_now(); dialog = Dialog::none; break;
-        case 3: sdl(SDL_SetWindowFullscreen(view.window, !fullscreen())); break;
-        case 4: quit = true; break;
+        case 2: sdl(SDL_SetWindowFullscreen(view.window, !fullscreen())); break;
+        case 3: quit = true; break; // Quitting always saves.
         }
     };
     auto inventory_act = [&](int action) {
@@ -698,7 +697,7 @@ int run_game(Options o) {
             else if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST) {
                 focused = false;
                 release();
-                world.checkpoint(player);
+                world.save_changes(player);
             } else if (event.type == SDL_EVENT_WINDOW_FOCUS_GAINED) focused = true;
             else if (event.type == SDL_EVENT_MOUSE_MOTION) {
                 mouse_x = event.motion.x; mouse_y = event.motion.y;
@@ -807,14 +806,13 @@ int run_game(Options o) {
                 if (key == SDLK_A || key == SDLK_D) {
                     if (key == SDLK_A) left = true;
                     else right = true;
-                    if (!hands.working) player.facing = key == SDLK_A ? -1 : 1;
+                    player.facing = key == SDLK_A ? -1 : 1;
                 }
                 // Facing the rear wall and crawling exclude each other; the last key pressed wins.
                 if (key == SDLK_W) {
                     if (player.facing) side = player.facing;
                     player.facing = 0;
                     player.down = false;
-                    hands.working = false;
                     hands.pending.reset();
                 }
                 if (key == SDLK_S) {
@@ -852,9 +850,10 @@ int run_game(Options o) {
         }
         view.follow(player, world);
         if (playing && mining && now >= next_action) swing(now);
-        if (now - autosave >= 5) {
-            world.checkpoint(player);
-            autosave = now;
+        // Once a minute, and only if something changed. Taking and placing only change memory.
+        if (now - last_save >= 60) {
+            if (world.save_changes(player)) notify("Saved");
+            last_save = now;
         }
         view.scene(world, player, hands, pose_for(player, travelled), now < swing_until);
         bool book_shown = recipes_open && !book.empty() && dialog != Dialog::inventory;
@@ -872,7 +871,7 @@ int run_game(Options o) {
         sdl(SDL_RenderPresent(view.renderer));
         SDL_Delay(1);
     }
-    world.checkpoint(player);
+    world.save_changes(player);
     return 0;
 }
 

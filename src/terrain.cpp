@@ -65,6 +65,7 @@ int profile_rank(const std::string& profile) {
     if (profile == "shelter-v1") return 1;
     if (profile == "expedition-v1") return 2;
     if (profile == "expedition-v2") return 3;
+    if (profile == "expedition-v3") return 4;
     return 0;
 }
 
@@ -141,9 +142,13 @@ Chunk generate(const Settings& s, int cx, int cy, const std::vector<Boundary>& b
                     if (tx < 0) continue;
                     int th = surface(s, tx);
                     int dx = std::abs(int(distance_x(tx, x, s.width())));
-                    if (dx == 0 && y >= th - 4 && y < th) id = t.timber;
-                    else if (dx <= 2 && y >= th - 6 && y <= th - 3 && dx + std::abs(y - (th - 4)) <= 3)
-                        id = t.leaves;
+                    bool trunk = dx == 0 && y >= th - 4 && y < th;
+                    bool canopy = dx <= 2 && y >= th - 6 && y <= th - 3 && dx + std::abs(y - (th - 4)) <= 3;
+                    // From v3 the trunk stands behind, where the character can walk past it,
+                    // and the canopy stays in front, around its top as well.
+                    if (trunk && rank >= 4) rear = t.timber;
+                    if (trunk && rank < 4) id = t.timber;
+                    else if (canopy) id = t.leaves;
                 }
             }
             chunk.at(lx, ly) = Cell{id};

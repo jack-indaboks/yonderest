@@ -8,7 +8,6 @@ namespace yonder {
 struct Hands {
     bool chooser = false;
     Block choice;
-    bool working = false;
     std::optional<Target> pending;
 
     void equip(Player& player, const Block& id);

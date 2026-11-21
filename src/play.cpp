@@ -8,7 +8,6 @@ namespace yonder {
 void Hands::cancel() {
     chooser = false;
     pending.reset();
-    working = false;
 }
 
 void Hands::equip(Player& p, const Block& id) {
@@ -19,7 +18,6 @@ void Hands::equip(Player& p, const Block& id) {
 
 void Hands::hand(Player& p) {
     pending.reset();
-    working = false;
     if (!p.selected.empty()) {
         p.last_selected = p.selected;
         p.selected.clear();
@@ -51,14 +49,10 @@ ActionResult Hands::mark(Player& p, const Block& id) {
 void Hands::depleted(Player& p) {
     bool holding = !p.selected.empty();
     drop_empty(p);
-    if (holding && p.selected.empty()) {
-        pending.reset();
-        working = false;
-    }
+    if (holding && p.selected.empty()) pending.reset();
 }
 
 ActionResult Hands::primary(World& world, Player& p) {
-    working = false;
     pending.reset();
     if (!p.selected.empty() && world.content.material(p.selected).tool.empty())
         return {false, "Use empty hand or a tool"};
@@ -67,7 +61,6 @@ ActionResult Hands::primary(World& world, Player& p) {
 }
 
 ActionResult Hands::interact(World& world, Player& p) {
-    working = false;
     pending.reset();
     auto t = target(p);
     return adjust_workbench(world, t.x, t.y, t.layer);
@@ -90,7 +83,6 @@ ActionResult Hands::place(World& world, Player& p, bool jumping) {
         }
     }
     auto result = place_at(world, p, t.x, t.y, t.layer);
-    if (result.ok && !p.down && p.facing != 0) working = true;
     depleted(p);
     return result;
 }

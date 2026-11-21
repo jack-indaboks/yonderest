@@ -59,7 +59,7 @@ struct Pose {
 
 struct Content {
     std::map<Block, Material> blocks;
-    std::map<std::string, Pose> poses; // From packs' character.txt; later packs override.
+    std::map<std::string, Pose> poses; // From packs' character.json; later packs override.
     std::map<std::string, Module> modules;
     std::vector<Recipe> recipes;
     // Named presentation images from packs' images/ directories; later packs override.
@@ -75,8 +75,9 @@ struct Terrain {
     Block clay, ore;
 };
 Terrain load_terrain(const std::filesystem::path& pack);
-// Known generation profiles in order: shelter-v1, expedition-v1, expedition-v2.
-// Zero means unknown. Expedition profiles add regional materials; v2 adds natural backing.
+// Known generation profiles in order: shelter-v1, expedition-v1, expedition-v2, expedition-v3.
+// Zero means unknown. Expedition profiles add regional materials; v2 adds natural backing;
+// v3 puts tree trunks in the background.
 int profile_rank(const std::string& profile);
 
 struct Manifest {
@@ -119,7 +120,7 @@ struct Chunk {
     std::string profile;
     // Empty means fully settled. Otherwise one value per cell, row-major.
     std::vector<std::uint8_t> settling;
-    bool dirty = false;
+    bool dirty = false; // Changed since it was loaded or saved; a new chunk is changed.
     Cell& at(int x, int y) { return tiles[y * chunk_size + x]; }
     const Cell& at(int x, int y) const { return tiles[y * chunk_size + x]; }
 };
@@ -150,7 +151,7 @@ Target target(const Player& player);
 
 class Save;
 
-// World owns the loaded chunks. Save owns their durable snapshots.
+// World owns the loaded chunks. Save reads and writes their files.
 class World {
 public:
     World(Save& save, const Content& content, Settings settings);
@@ -163,8 +164,10 @@ public:
     bool solid(int x, int y);
     void set(int x, int y, const Block& block, Layer layer = Layer::foreground);
     void put(int x, int y, const Cell& cell, Layer layer = Layer::foreground);
+    // Unloads chunks outside this area, writing each changed one as it leaves.
     void retain(int left, int top, int right, int bottom);
-    void checkpoint(const Player& player);
+    // Writes every changed chunk and a changed player. Returns whether anything was written.
+    bool save_changes(const Player& player);
 
 private:
     Save& save;

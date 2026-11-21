@@ -1,3 +1,0 @@
-# ID                     R   G   B  Solid  Name          Station Tool Required-tool
-expedition:clay         174 106  81    1    "Clay"
-expedition:copper_ore   101 116 124    1    "Copper ore"   - - pick

@@ -241,7 +241,9 @@ C++ handles JSON input/output and can expose the relevant data to Lua as tables 
 
 The world model and game logic remain independent of SDL-specific presentation details. The flagship uses pixel-art tiles and sprites. A terminal presentation using ASCII or Unicode is a possible optional edition, not the flagship. The world and its content are not defined in terms of either pixels or terminal glyphs.
 
-**Open:** Lua API shape and reference lifetime, mobile packaging, and whether multiplayer will become part of the game. Multiplayer is not an established requirement with a chosen synchronization model.
+Playing together starts as two players on one screen in one process: a second set of keys and a shared view, with no synchronization model needed.
+
+**Open:** Lua API shape and reference lifetime, mobile packaging, and whether networked multiplayer will become part of the game. It is not an established requirement with a chosen synchronization model.
 
 ## Art, licensing, and community
 

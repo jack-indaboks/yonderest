@@ -1,0 +1,62 @@
+[
+  {
+    "id": "workshop:planks",
+    "output": {"block": "workshop:planks", "count": 4, "x": 0, "y": 1},
+    "shape": [
+      ["base:timber", "base:timber"],
+      ["base:timber", "base:timber"]
+    ]
+  },
+  {
+    "id": "workshop:pick",
+    "output": {"block": "workshop:pick", "x": 1, "y": 1},
+    "shape": [
+      ["base:stone", "base:stone", "base:stone"],
+      [null, "base:timber", null]
+    ]
+  },
+  {
+    "id": "workshop:workbench",
+    "output": {"block": "workshop:workbench", "x": 0, "y": 1},
+    "shape": [
+      ["workshop:planks", "workshop:planks", "workshop:planks"],
+      ["workshop:planks", null, "workshop:planks"]
+    ]
+  },
+  {
+    "id": "workshop:forge",
+    "output": {"block": "workshop:forge", "x": 1, "y": 2},
+    "shape": [
+      ["base:stone", "base:stone", "base:stone"],
+      ["base:stone", null, "base:stone"],
+      ["base:stone", "base:timber", "base:stone"]
+    ]
+  },
+  {
+    "id": "workshop:bricks",
+    "output": {"block": "workshop:bricks", "count": 4, "x": 0, "y": 1},
+    "shape": [
+      ["expedition:clay", "expedition:clay"],
+      ["base:timber", null]
+    ],
+    "stations": ["forge"]
+  },
+  {
+    "id": "workshop:glass",
+    "output": {"block": "workshop:glass", "count": 4, "x": 0, "y": 1},
+    "shape": [
+      ["base:sand", "base:sand"],
+      ["base:timber", null]
+    ],
+    "stations": ["forge"]
+  },
+  {
+    "id": "workshop:copper",
+    "output": {"block": "workshop:copper", "count": 4, "x": 0, "y": 1},
+    "shape": [
+      ["expedition:copper_ore", "expedition:copper_ore"],
+      ["base:timber", null]
+    ],
+    "stations": ["forge"]
+  }
+]

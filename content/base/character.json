@@ -1,0 +1,11 @@
+{
+  "poses": {
+    "idle": {"image": "character-idle", "bare": "character-idle-bare", "anchor": 3, "hand": {"x": 7, "y": 9}},
+    "stride": {"image": "character-stride", "bare": "character-stride-bare", "anchor": 3, "hand": {"x": 7, "y": 10}},
+    "jump": {"image": "character-jump", "bare": "character-jump-bare", "anchor": 3, "hand": {"x": 7, "y": 9}},
+    "fall": {"image": "character-fall", "bare": "character-fall-bare", "anchor": 3, "hand": {"x": 7, "y": 9}},
+    "crawl-1": {"image": "character-crawl-1", "anchor": 8, "hand": {"x": 7, "y": 10}, "block": {"x": 1, "y": 1}},
+    "crawl-2": {"image": "character-crawl-2", "anchor": 8, "hand": {"x": 5, "y": 10}, "block": {"x": 1, "y": 1}},
+    "back": {"image": "character-back", "bare": "character-back-bare", "anchor": 3, "hand": {"x": 7, "y": 9}}
+  }
+}

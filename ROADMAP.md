@@ -77,7 +77,7 @@ The assistant remains a deferred possibility, not a necessary upgrade to make ea
 
 ### Next refinement: JSON saves and content, less plumbing
 
-Bring saves and the existing declarative content in line with DESIGN's Save representation. This is the next bounded build pass; the current executable still uses SQLite and custom content syntaxes.
+Bring saves and the existing declarative content in line with DESIGN's Save representation. This bounded build pass is implemented and awaits the review below.
 
 - Saves, saving and the pause menu as DESIGN's Save representation describes them. The conversion preserves stable content identities, both block layers, quantities in unfinished assemblies and the distinction between saved and ungenerated territory.
 - Convert the author's existing world once, outside the game, leaving the SQLite source untouched.

@@ -166,6 +166,23 @@ void actions(World& w) {
     require(p.x > 11 && !intersects(w, p.x, p.y), "the character can walk past a set-down tool");
 }
 
+// One result stands in the world; only a surplus is carried.
+void crafting(World& w) {
+    clear(w);
+    auto p = standing(14.15);
+    for (int x : {10, 11, 12}) w.put(x, 27, Cell{"base:stone", 1, true});
+    p.inventory["base:timber"] = 1;
+    p.selected = "base:timber";
+    auto made = place_at(w, p, 11, 28);
+    require(made.ok && w.block(11, 28) == "workshop:pick", "the pick's shape completes in the world");
+    require(!p.inventory.contains("workshop:pick"), "a single result is not also carried, not even as an empty entry");
+    clear(w);
+    for (auto [x, y] : {std::pair{10, 27}, {11, 27}, {10, 28}}) w.put(x, y, Cell{"base:timber", 1, true});
+    p.inventory["base:timber"] = 1;
+    require(place_at(w, p, 11, 28).ok && w.block(10, 28) == "workshop:planks" && p.inventory.at("workshop:planks") == 3,
+            "four planks: one in the world, three carried");
+}
+
 void jump_building(World& w) {
     clear(w);
     Hands h;
@@ -261,7 +278,7 @@ void rear_wall(World& w) {
 void persist(const std::filesystem::path& file, const Content& content, const Settings& settings) {
     Player before;
     {
-        Save save(file); save.initialize(settings);
+        Save save(file); save.write_settings(settings);
         World w(save, content, settings); clear(w);
         w.put(31, 31, Cell{"base:timber", 5, true});
         w.put(31, 31, Cell{"missing:wall", 1, true}, Layer::background);
@@ -271,18 +288,18 @@ void persist(const std::filesystem::path& file, const Content& content, const Se
         before.ready = {"workshop:pick", "base:soil"};
         before.selected = "base:soil"; before.last_selected = "workshop:pick";
         before.facing = 0;
-        w.retain(400, 150, 440, 180); w.checkpoint(before);
+        w.retain(400, 150, 440, 180); w.save_changes(before);
     }
     {
         Save save(file); World w(save, content, *save.settings());
-        auto p = save.player();
+        auto p = *save.player();
         require(p.inventory == before.inventory && p.ready == before.ready && p.selected == before.selected
             && p.last_selected == before.last_selected && p.facing == 0 && p.y == before.y,
             "inventory, readiness, last selection, facing and position survive restart");
         require(w.cell(31, 31) == Cell{"base:timber", 5, true}, "foreground batch state survives the new format");
         require(w.block(31, 31, Layer::background) == "missing:wall", "missing background content retains its stable ID");
         require(w.cell(0, 32, Layer::background).batch == 10, "both layers survive eviction and independent vertical/horizontal chunk boundaries");
-        w.set(31, 31, {}, Layer::background); w.checkpoint(p);
+        w.set(31, 31, {}, Layer::background); w.save_changes(p);
     }
     {
         Save save(file); World w(save, content, *save.settings());
@@ -298,15 +315,15 @@ int main(int argc, char** argv) {
         std::filesystem::create_directories(scratch);
         Content content;
         auto root = std::filesystem::path(argv[1]);
-        for (const auto& [id, version] : load_manifest(root / "flagship.txt").packs) content.load(root / id);
+        for (const auto& [id, version] : load_manifest(root / "flagship.json").packs) content.load(root / id);
         content.validate();
         Settings settings; settings.seed = 42; settings.terrain = load_terrain(root / "expedition");
         {
-            Save save(scratch / "play.sqlite3"); save.initialize(settings);
+            Save save(scratch / "play"); save.write_settings(settings);
             World w(save, content, settings);
-            targets(w); boundary_placement(w); selection(); actions(w); jump_building(w); rear_wall(w);
+            targets(w); boundary_placement(w); selection(); actions(w); crafting(w); jump_building(w); rear_wall(w);
         }
-        persist(scratch / "persist.sqlite3", content, settings);
+        persist(scratch / "persist", content, settings);
         std::filesystem::remove_all(scratch);
         return 0;
     } catch (const std::exception& error) {

@@ -1,3 +1,0 @@
-# Generation version and the material IDs used for each role.
-shelter-v1
-base:grass base:soil base:stone base:sand base:timber base:leaves

@@ -1,14 +1,6 @@
 # Yonderest roadmap
 
-This roadmap says when features arrive. What each feature is belongs to [DESIGN.md](DESIGN.md), and the game as it currently runs is described in [README.md](README.md). Milestones are playable outcomes, not dates.
-
-## Landed
-
-- **0.0.1:** the persistent first shelter. A wrapping, chunked world to walk, gather and build in, which is still there after quitting and returning.
-- **0.0.2:** regional resources and crafting as construction, with stations and workbench batching.
-- **0.0.3:** keyboard building. Facing and reach, the rear layer, scaffolding, the belt and the first tool.
-- **0.0.4:** the readable first session. Art on the 16-pixel grid, the HUD and recipe book, and natural rear-layer material underground.
-- **0.0.5:** JSON saves and content.
+This roadmap says when features arrive. What each feature is belongs to [DESIGN.md](DESIGN.md), the game as it currently runs is described in [README.md](README.md), and what each tagged version changed is in [CHANGELOG.md](CHANGELOG.md). Milestones are playable outcomes, not dates.
 
 ## Next: polish, then going public
 

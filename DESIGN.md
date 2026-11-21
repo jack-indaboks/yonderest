@@ -2,7 +2,7 @@
 
 Yonderest is a free and open-source, native 2D pixel-art fantasy sandbox about discovering places, making homes in them, and connecting them.
 
-This document describes the intended game and its architecture. It is not an inventory of implemented features. Build milestones belong in [ROADMAP.md](ROADMAP.md).
+This document describes the game Yonderest intends to be, as far as that vision has been worked out: settled features are stated plainly, and features still taking shape are left open. It changes when the vision changes, not when something is built. The game as it currently runs is described in [README.md](README.md); when each feature arrives is in [ROADMAP.md](ROADMAP.md).
 
 ## The experience
 
@@ -22,11 +22,13 @@ A universe begins with one persistent world. Exploration and crafting eventually
 
 The starting world does not contain every resource available in the universe. Other worlds offer different environments, resource ecosystems, and possibilities, not merely stronger replacements for everything already found. Each world contains multiple biomes; a world's identity is not one biome stretched across a planet.
 
+The starting world is expansive. Circling it is an epic journey, not an afternoon's walk, and arriving back where one began is an achievement. Worlds reached through portals take size as one of their parameters, alongside everything else that distinguishes them: some rival the starting world, and some are small enough to hold a single biome.
+
 Travel expands the network rather than replacing it. Existing homes and routes retain value as new worlds become reachable.
 
 **Open:** Portal construction, destination discovery, and whether players can seek a particular kind of world or initially travel blindly.
 
-Ordinary doors leading to separate pocket interiors are not an established feature. The current inclination is away from them: a mundane door should not quietly require another dimension to make a house work in a side-scrolling world. Portals explicitly connect different places and need not follow the same convention. A pantry-like door acting as the front of storage, rather than an entrance to another room, is a possibility to explore.
+Ordinary doors leading to separate pocket interiors are not an established feature. The inclination is away from them: a mundane door should not quietly require another dimension to make a house work in a side-scrolling world. Portals explicitly connect different places and need not follow the same convention.
 
 ## Geography and chunks
 
@@ -40,83 +42,85 @@ For persistence and generation, explored territory means generated and persisted
 
 All spatial generation respects horizontal periodicity: terrain, geology, climate, resources, and ecology. The first and last chunk columns are ordinary neighbors, not special borders repaired after generation. Movement and interaction likewise treat the seam as continuous geography.
 
+Landscape features have their own scale. Hills, climate belts and regions are sized for the land they shape, not stretched to fit the circumference, so a larger world holds more places rather than broader versions of the same ones.
+
 Floating terrain fits within the world's vertical bounds. A deep lava sea is a possible lower environment, separate from the actual world boundary; it does not imply a fluid simulation.
 
-**Open:** Exact chunk dimensions and shape, world circumference and height, loading margins, and upper and lower boundary behavior.
+**Open:** Exact chunk dimensions, world circumferences and heights, loading margins, and upper and lower boundary behavior.
 
-## Embodied interaction and background depth
+## Embodied interaction
 
-The desired player feel is immediate and character-centered, with Mario-like movement as a reference for that quality, not a template for the whole game. The character is one block tall, not two, so the immediate forward interaction does not ambiguously span two block rows. The player's ordinary reach is one block directly in front, not an adjustable radius or remote target. Ranged attacks initially mean pointing and shooting into the world, not selecting a distant target. In-world play is keyboard-driven. Mouse interaction is a convenience for UI, not world targeting, and no UI function requires a mouse.
+The desired player feel is immediate and character-centered, with Mario-like movement as a reference for that quality, not a template for the whole game. The character is one block tall, so the immediate forward interaction does not ambiguously span two block rows. The character's reach is the block directly before them, not an adjustable radius or a remote target. Ranged attacks mean pointing and shooting into the world, not selecting a distant target. In-world play is keyboard-driven. The mouse is a convenience for interfaces, never for acting on the world, and no function requires it.
 
-The keyboard vocabulary is A/D for lateral movement, Space as the sole jump key, and W to turn the character toward the background. W is a change of facing, not a held modifier: the background block behind the character is now simply the block they face. A lateral turn faces the foreground again. Holding S crouches, crawls when moving, and aims taking/leaving beneath the feet; it does not turn the character toward the camera. With S held while facing the background, that downward target is in the background layer. Other contextual downward movement, such as on ladders or in water, remains to be worked through.
+Jumps are high and generous; falling is brisk rather than floaty. Walking into a one-block step stops the character; climbing it is a jump, never an automatic step-up.
 
-Placement puts the held block in the first whole cell beyond the character's facing edge unless downward aim directs it below. Straddling a tile boundary does not cause placement to choose an overlapping cell and refuse it. Direct access and empty space are enough: a placed block does not have to touch another block. Blocks may be placed in midair. This applies to foreground and rear-wall construction, not just a special scaffolding exception.
+### Facing and reach
 
-Right-hand functions are chosen for ergonomics first, mnemonics second. The trial uses H for Hand, J for hit/break/pick up, K for interact, L for leaving/placing the held object, and I for inventory management. H stays beside J/K because hand selection and scrolling form one workflow. The intended resting position is J/K/L/semicolon, with the index finger reaching H. R opens or closes the recipe reference. P pauses; Escape closes an actual dialog or transient chooser before doing its usual pause/menu action. A passive recipe reference does not change Escape's behavior. Function keys are not used for game or UI bindings. The trial repeats J while held, but each distinct Place press makes one request, including a buffered underfoot request.
+A and D walk and turn the character. Space is the only jump key, and it jumps whatever else is held. W turns the character toward the background: after a tap of W they face the rear wall, and the background block behind them is simply the block they face. Holding S crouches, crawls when moving, and aims taking and placing beneath the feet; pressed while facing the wall, it turns the character back to the side they last faced. Otherwise the last of these keys pressed decides facing, and releasing W while A or D is still held turns the character that way.
 
-Sprint uses held semicolon while moving with A/D, with no double-tap gesture and without waiting for stamina. The first trial changes horizontal speed without changing the jump impulse. Sustained pinky comfort, the speed difference and running-jump feel need playtesting. Stamina is strongly anticipated later alongside health and hunger. If sprint does not earn this binding, inventory or pause are fallback candidates, not relocating Hand.
+Holding W reaches up. While W is held, the character faces the wall, and taking and placing address the cell above their head, so they can dig straight up or roof themselves over, standing or in a jump. A and D still move the character while W is held, shuffling along the wall without turning, so a ceiling can be dug out or a roof laid while walking. The upward strike is always seen from behind. Climbing, swimming and other contextual vertical movement remain open.
 
-Tool use and placement are explicitly distinct. J is the primary hitting or gathering action; K interacts with the addressed block. The empty hand can gather hand-gatherable blocks, while a breaking-focused tool breaks as its primary use. That consistency is the reason for trialing this mapping rather than making K a universal pickup action; playtesting, not button-name theory, decides its feel. A held building material does not inherit mining, and other tools can have different uses. The exact blocks requiring particular tools remain open; the prototype includes one craftable pick and one tool-gated material to make the distinction testable. Using a held object must not silently become placing it. Setting down a tool places that same block, which need not block movement. Broader tool actions and contextual empty-hand affordances remain open.
+Placement puts the held block in the first whole cell beyond the character's facing edge, unless S or W aims it below or above. A placed block does not have to touch another: direct access and empty space are enough, and blocks may be placed in midair. This applies to foreground and rear-wall construction alike, not just to scaffolding.
 
-Lateral movement turns the character in the direction of travel, including while building. Placement does not latch the character's facing or introduce a backing-away mode. Ordinary gameplay should not demand that the player simultaneously steer their character and an independent target cursor. There is no world-target highlight: the addressed foreground, background or downward cell is not outlined or marked.
+Objects that share the character's own space, such as a tool set down where they stand, can be taken back.
 
-### Quick hand selection
+### Forgiveness
 
-Inventory management has its own UI, opened with I. Readied objects are marked and highlighted in their existing inventory positions, not moved into another container or partitioned into tools and building materials. The quick selector uses that smaller readied subset, not the entire inventory. It permits zero to twelve readied entries. Twelve is chosen for the clock-like presentation; chunk-size power-of-two requirements do not apply to this menu capacity.
+The game reads intent at the edges instead of demanding pixel precision, and it does so through one consistent rule rather than a collection of exceptions. A jump that would catch a block's corner by a few pixels slips past it, so the character can jump up into a one-block opening. A placement made while the body overlaps a cell boundary by a few pixels goes to the cell the player plainly means. The width of that margin is settled by feel.
 
-The selector appears as a radial popup around the character, with the selected object highlighted above the head and carried quantities visible. While it is open, J/K step backward/forward through the wheel instead of invoking tool actions. WASD remains movement: choosing a tool while walking is part of the intended interaction. It is the open chooser, not empty hand by itself, that owns J/K; outside the chooser, empty-hand actions can still operate on the world. Selection input must not accidentally execute a newly chosen tool's action on closing the popup.
+The physical constraint creates work, not bad input handling. The player chooses what to do; carrying it out does not require reflexes beyond the intent.
 
-Each distinct Hand press performs the next state transition: holding an object to empty hand; empty hand to the chooser; chooser to equipping the selected object and closing. The chooser defaults to the last-used object when it is available in the ready set. Thus two rapid presses from a held object open selection, two from empty hand can restore the previous object, and three from a held object can reselect it. These are immediate ordinary transitions, not a double-tap timing window or a hold-to-open gesture. In this prototype, an empty chooser reports no readied objects with an icon, not text. A depleted held stack returns to empty hand; unavailable readied entries are omitted from the wheel, and an unavailable last selection falls back to the first available readied entry. Readiness marks remain in the one inventory so they can be managed or reused after gathering more.
+### Bindings
 
-This scheme needs no separate previous/next keys: J/K are available for selection while the chooser owns input. Number-row shortcuts or a distinct last-selected swap are not required for the first trial. The complete inventory layout, readiness ordering controls and transfer/storage workflows remain open.
+Right-hand bindings are chosen for ergonomics first, mnemonics second. The resting position is J/K/L/semicolon, with the index finger reaching H: H for Hand, J to hit or gather, repeating while held, K to interact with the addressed block, and L to leave the held object in the world, once per press. I opens the backpack and R the recipe book. P pauses. Escape closes an open dialog or chooser before offering the menu; a passive reference on screen does not change what it does. Function keys are never used.
+
+Held semicolon sprints while walking, without changing the jump impulse. Whether sprint keeps that binding depends on sustained comfort; inventory or pause are its fallbacks, not Hand. Stamina is anticipated alongside health and hunger.
+
+Tool use and placement are distinct. J is the primary hitting or gathering action; K interacts. The empty hand can gather hand-gatherable blocks, while a breaking tool breaks as its primary use. A held building material does not inherit mining. Some materials need particular tools; which ones, and the wider range of tool actions and empty-hand affordances, remain open. Using a held object never silently becomes placing it. Setting down a tool places that same block, which need not block movement.
+
+Lateral movement turns the character in the direction of travel, including while building, except while W is held. Placement does not latch facing. Ordinary play never asks the player to steer the character and an independent cursor at once. There is no world-target highlight: the addressed foreground, background, downward or upward cell is not outlined or marked.
+
+### The belt
+
+The belt is the set of up to twelve readied stacks in the backpack, presented as a ring around the character. Readying marks a stack where it sits; it does not move it into another container or divide tools from materials. Readiness belongs to the stack, not to the slot that holds it. When a readied stack is used up, its readiness ends with it, and an empty slot is never on the belt. A new kind of object lands in the first open slot of the pack and is readied automatically while fewer than twelve are readied. A further stack of a kind already carried joins that kind wherever it is and is never readied automatically. Un-readying one thing and readying another needs no rearranging of the pack. Twelve suits the clock-like ring; it is not a power-of-two constraint.
+
+The ring shows each readied object with its carried quantity. The selected entry sits above the character's head and the others are subdued. While the ring is open, J/K step through it instead of acting on the world, and WASD keep moving: choosing a tool while walking is part of the interaction. It is the open ring, not the empty hand, that owns J/K.
+
+Each Hand press makes the next transition: from a held object to the empty hand, from the empty hand to the ring, and from the ring to holding its selection. The ring opens on the last-used object when it is readied. These are immediate transitions, not double-tap windows or hold gestures, and closing the ring never triggers the chosen tool's action. Using up the held stack returns to the empty hand. The backpack can also put any carried object straight into the hand without readying it; the ring shows only the belt.
+
+### Carrying and storage
+
+Carrying is limited. The backpack has a finite number of slots, and each kind of object has a stack size of its own: plentiful materials stack deeply, while a unique tool stacks to one. Deciding what to carry is part of the game's challenge, not a nuisance to engineer away. When a readied stack has spares elsewhere in the pack, using it draws on the spares first, so the readied stack stays full until the last of that object is gone.
+
+In-world storage gives homes their place in that challenge: what does not travel stays somewhere the player built. A pantry-like door acting as the front of storage, rather than an entrance to another room, is one form to explore. The forms of storage and the transfer between pack and storage remain to be designed.
 
 ### HUD and recipe reference
 
-The HUD is a few clean, recognizable icons over the world in a screen corner, not a debug overlay or black bands reserved outside the play view. A recipe-book icon labeled R and a backpack icon labeled I are clickable entrances to their respective interfaces. The key labels teach the shortcuts through the controls themselves. Health and related indicators can later share this visual family when those systems exist; they are not part of the current pass.
+The HUD is a few clean, recognizable objects over the world in a screen corner, not a debug overlay or bands outside the play view: a closed recipe book embossed R and a backpack stamped I, which open their interfaces when clicked and teach their own keys. Health and related indicators join the same visual family when those systems exist.
 
-Opened interfaces support mouse navigation and complete keyboard navigation with arrow keys and Enter. Number shortcuts may be useful where relevant, but are not a requirement or a replacement for ordinary navigation. Inventory is an actual management dialog. Help, saving, fullscreen and quitting need discoverable menu routes without function keys. The existing H/J/K quick-hand workflow remains available during play rather than being replaced by dialog navigation.
+Opened interfaces support the mouse and complete keyboard navigation with arrow keys and Enter. Number shortcuts may help where relevant but replace neither. The backpack is an actual management dialog. Saving, fullscreen, controls and quitting are reached through the menu. The H/J/K quick-hand workflow remains available during play.
 
-The recipe reference is a small corner overlay that remains visible while building, not a screen-dominating dialog. R simply shows or hides it. Left/Right browse recipes while it is visible; an actual open dialog takes precedence for UI navigation. Mouse controls provide the same browsing. Show the physical ingredient arrangement, material icons, quantities, result and required working surfaces clearly. This is reference for construction in the world, never a button that crafts the result.
+The recipe book is a small reference that stays open while building, not a screen-dominating dialog. R shows or hides it; Left and Right turn its pages while it is visible, and the mouse can do the same. An open dialog takes precedence for interface navigation. It shows each recipe's physical arrangement, material icons, quantities, result and required working surfaces clearly, and it never crafts anything itself. It needs no pin action, confirmation press or focus mode, does not pause play, and takes over neither WASD nor H/J/K/L nor Escape merely by being visible.
 
-There is no separate pin action, confirmation press or focus-release mode. The reference does not pause play, take over WASD or H/J/K/L, or intercept Escape merely because it is visible. Enter activates UI controls where needed; it is not an extra step to keep a recipe on screen. Keeping a diagram visible and operating a dialog are different things.
+Whatever the world can show, it shows: the held block or tool is recognizable in the character's hand, and facing and actions read through the sprite. Exact quantities belong to the ring and the backpack. There are no permanent captions for what is held or targeted, no coordinates, and no keyboard manual over the world. Save feedback is brief and separate from pause, which is shown only while play is actually paused.
 
-What can be communicated in the world should be: the held block or tool is recognizable in the character's hand, and facing and actions read through the sprite. Exact quantities belong in the radial picker and inventory. Do not substitute permanent holding captions, target captions, coordinates or a keyboard manual for that presentation. Inventory distinguishes unavailable readiness marks from carried stock without silently discarding the marks. Save feedback is brief and separate from navigation; pause presentation reflects the actual pause state instead of leaving a stale "Saved (paused)" message after play resumes.
+### Building without help
 
-### Early-game jump-building candidate
+Basic scaffolding is easy without help and without perfect reflexes. The gesture is S + Space + L: S may be held before jumping, crouching does not suppress Space, and jumping does not cancel the downward aim. Pressing L while airborne with S held places a block beneath the character. If L is pressed before the character has cleared the space, the request waits for clearance and then places, without another press. One press is one placement; holding L does not repeat. The gesture works throughout the airborne phase.
 
-The current development focus is the unaided early-game version, not a construction cursor or assistant. Jump-building must make basic scaffolding easy without requiring perfect reflexes or a narrowly timed placement while airborne. Early constraints can come from physical access and resources, not unreliable execution of an obvious construction intent.
+Without S or W, placement during a jump targets the cell directly before the character at the moment L is pressed. A jump naturally brings that cell two or three rows higher; it needs no reach accommodation, and a forward placement is never retargeted later in the jump.
 
-The candidate gesture is S + Space + Place. S may be held before jumping: crouching does not suppress Space, and jumping does not cancel the downward aim. While airborne and still holding S, pressing Place requests a block beneath the character. There is no requirement to jump first, then press down in midair, then hit a narrow placement window. The left middle finger can hold S, a thumb can jump, and the right hand can place; whether that feels comfortable requires playtesting.
+## Background depth
 
-Placement timing is forgiving. If Place is pressed before the sprite has fully cleared the intended block space, the request waits for clearance and then places without requiring another press. One press is one placement request, not repeated placements caused by a pending request being checked repeatedly. The intended interaction should work throughout the airborne phase; takeoff, descent, landing and obstruction cases need testing against that goal. Holding Place does not repeat.
+Every world has two block layers. The rear layer is interactable and nonblocking: it gives houses real rear walls instead of interiors open to the sky, and it lets the character walk past a tree trunk or ladder while still being able to address it. Tree trunks stand in the rear layer; canopies remain in the foreground. Layer membership, collision and climbing are related but distinct questions. No depth traversal or pocket interior follows from having a rear layer.
 
-Without S, forward or background placement while jumping targets the block directly before the sprite at the moment Place is pressed. Jumping naturally brings that target two or even three rows higher; it needs no upward reach accommodation or automatic choice of height. This is distinct from the forgiving clearance buffer for placing beneath the character. The scaffold interaction must not turn every airborne placement into placement beneath the character or retarget a forward placement later in the jump.
+Underground, the rear layer is as varied as the foreground, with its own resources, perhaps slightly richer than the foreground's, which gives mining a reason even where the screen already shows what lies a few blocks down. Above ground, open sky lies behind the foreground.
 
-The current movement refinement is to make falling feel less floaty while retaining the jump height the author liked. Recheck running jumps, forward placement and underfoot buffering after tuning descent; those interactions must still work together. This does not commission additional movement mechanics merely under the heading of responsiveness.
+Behind the rear layer is a backdrop that cannot be touched: a muted texture of the biome's base material, sky above ground, stone below it, and the local base material in other biomes. The backdrop is drawn from where it is, as the sky is; it is not generated or saved as blocks, so there is no third block layer. Removing a foreground block exposes the rear-layer block behind it, and removing that exposes the backdrop.
 
-### Construction assistant: retained possibility, deferred
+Generated rear-layer material and its removal persist as world state. Saved terrain keeps whatever rear layer it was saved with, including none. Lighting is separate work.
 
-The assistant remains a possible future feature, not an assumed necessary upgrade. The author's playtest found unaided building less awkward than anticipated; the game must not manufacture clumsy early construction to justify later assistance. A helper might serve larger projects or another style of play. Its inclusion, acquisition and place in progression need further judgment, not implementation in the next pass.
-
-The retained concept is a separate, player-controlled assistant in the world, rather than a hammer acting as a remote cursor. It has a limited inventory and can only place, not serve as another mining or combat avatar. The player retains ordinary direct interactions; the assistant's own position supplies its access to construction sites.
-
-The assistant can travel independently of the player's arm's reach. It may be able to fly, potentially through an upgrade; its starting locomotion and collision rules are not selected. The camera remains centered on the player and does not scroll to follow the assistant. Visibility is the intended practical distance tether: the visible screen defines the working area, rather than an arbitrary radius measured in blocks from the player. The precise screen-edge behavior, including what happens when player movement scrolls past the assistant, remains open.
-
-The earlier hand-role proposal used right-hand arrows to move the assistant and a left-hand command to place in addition to moving the player. Arrow keys now have a concrete UI role, and R is the recipe binding; the deferred helper does not reserve those keys or require extra modes in the present game. Its controls would have to be reconciled with UI navigation if it is built. One candidate assistant command activates or deactivates it when co-located with the player and places from its cargo otherwise. Activation, packing and the exact meaning of co-location remain to be worked through; this does not establish a remote recall command.
-
-Capacity or mobility upgrades could develop assistance without increasing the player's arm's reach. They do not establish a mandatory progression from hand building to using a helper. Basic scaffolding must remain forgiving and useful without it.
-
-The assistant places from its own limited inventory. Two owners carrying blocks do not require tools and building materials to become disjoint item classes or require the player to maintain two categorical hotbars. Loading, selecting and recovering the assistant's cargo still need design, using the same carried/placed object vocabulary. Its form, deployment or stowing, the placement gesture, behavior off screen, and movement/loading/persistence footprint remain open. A targeting ghost's temporary visibility is not by itself a decision about a world assistant's lifetime or cargo.
-
-### Background construction
-
-An interactable, nonblocking background layer gives houses actual rear walls rather than an interior open to the sky. It can also let the character walk past a tree trunk or ladder while still being able to address it. Tree trunks belong in the background by default; canopies remain foreground. Layer membership, collision and climbing behavior are related but distinct questions. No depth-traversal simulation or pocket interior follows automatically from adding a background layer.
-
-Spatial crafting is foreground-only. Background blocks do not supply ingredients, required empty cells or stations, and rear-wall construction cannot complete a recipe. This is the chosen next-pass behavior and may remain permanent; that broader decision can wait for a later design pass.
-
-Open sky is the default background above ground. Natural underground backing is actual, recoverable background material in the same layer as constructed rear walls, approximately matching the local foreground. It is not visual scenery derived anew whenever foreground terrain is mined. Removing foreground exposes the background block; breaking that background block exposes the void behind it. There is no third generated terrain layer or inexhaustible underground texture behind the two block layers. Constructed rear walls give a home its own interior appearance using that same background layer.
-
-Generated backing and its removal persist as world state. This decision does not authorize populating or rewriting already-explored saves with background blocks; existing construction and empty background cells remain authoritative. Eventual lighting and the visual treatment of the exposed void remain separate work, not reasons to invent another material layer.
+Crafting reads the foreground only: rear-layer blocks supply neither ingredients, required empty cells nor stations, and building a rear wall never completes a recipe. Whether the rear layer ever takes part in crafting is open.
 
 ## Causally coherent generation
 
@@ -142,7 +146,7 @@ A chunk is generated on first encounter and persisted as complete world state. L
 
 Saved terrain is authoritative. Adding, removing, or updating generation modules never implicitly regenerates it.
 
-A new chunk takes boundary conditions only from its immediate neighbors; those conditions carry forward whatever transition remains. At a boundary between generations, variation on the new generator's side should settle into the terrain its rules would otherwise have produced within roughly one or two chunks. This applies vertically as well as horizontally, including the world seam. The exploration-order guarantee applies while generation rules are unchanged; changing them can produce different results according to which territory was already saved.
+A new chunk takes boundary conditions only from its immediate neighbors; those conditions carry forward whatever transition remains. At a boundary between generations, the new generator's side settles into the terrain its rules would otherwise produce within roughly one or two chunks. This applies vertically as well as horizontally, including across the world seam. The exploration-order guarantee applies while generation rules are unchanged; changing them can produce different results according to which territory was already saved.
 
 Boundary information may include elevation, slope, geological layers, water levels, or environmental fields, according to the generator's needs. A separate post-generation blending subsystem is not prescribed.
 
@@ -150,17 +154,17 @@ World parameters and generated material definitions persist wherever they are ne
 
 ### Save representation
 
-Saves use ordinary JSON plaintext, readable and editable outside the game. Persistence must support geographically bounded loading and writing without reading or rewriting the whole explored world. SQLite is not part of the intended persistence design; remove the prototype's dependency rather than retaining a second runtime database without a demonstrated need.
+Saves are ordinary JSON plaintext, readable and editable outside the game. Persistence supports geographically bounded loading and writing without reading or rewriting the whole explored world. There is no database in persistence.
 
-The representation describes game meaning through named properties, stable content identifiers and explicit spatial structure, not C++ memory layouts or positional records wrapped in JSON strings. JSON is read into the game's own plain data where a file is loaded, and written from it where a file is saved; the rest of the game never handles JSON. No library that mirrors C++ structures into JSON automatically is used, since a code change would then silently change the save format. Adding an optional property must not require rewriting existing saves or advancing a global format version. Absence has a meaning appropriate to the feature: for example, a newly introduced background layer can be absent in older terrain and mean empty background. Removing a property must not leave a dummy positional slot. Unknown additive properties do not by themselves invalidate a save.
+The representation describes game meaning through named properties, stable content identifiers and explicit spatial structure, not C++ memory layouts or positional records wrapped in JSON strings. JSON is read into the game's own plain data where a file is loaded, and written from it where a file is saved; the rest of the game never handles JSON. No library mirrors C++ structures into JSON automatically, since a code change would then silently change the save format.
 
-The design should accommodate the intended game's evolving world and module data, not reproduce the prototype's serialization merely because it exists. This is not a promise that every future semantic change can be read without interpretation. Maintaining a migration ladder for every exploratory build and automatically backing up each upgrade are not requirements. A one-time conversion of the author's existing world is separate from permanent compatibility machinery and must leave its source untouched.
+Adding an optional property requires neither rewriting existing saves nor a global format version. Absence has a meaning appropriate to the feature: a layer absent from older terrain, for example, means that layer is empty. Removing a property leaves no dummy positional slot. Properties the game does not recognize neither invalidate a save nor disappear when the game rewrites the file. A genuine change of meaning may need interpretation, but there is no ladder of upgrades for every build and no automatic backup on each upgrade.
 
 JSON is data, not a graph-mirroring system. Separate occurrences of a material reference its definition by identity; they do not require shared live-node proxies or transclusion.
 
-Each world is one folder holding its world file, its player file and one file per chunk. Nothing is written per action: taking and placing only change memory. A changed chunk is written when it leaves memory, and everything changed is written when the window loses focus, on quit, and once a minute, only if something changed. Each file is replaced whole, so a crash can lose up to the last minute. A small "Saved" shows on the once-a-minute write. The pause menu offers Resume, Controls, Fullscreen and Quit, and Quit always saves. A save before something risky protects nothing if the next automatic write replaces it, so restore points are a possible future feature tied to hazards.
+Each world is one folder holding its world file, its player file and one file per chunk. Nothing is written per action: taking and placing only change memory. A changed chunk is written when it leaves memory, and everything changed is written when the window loses focus, on quitting, and once a minute if anything changed. Each file is replaced whole, so a crash can lose up to the last minute. A small "Saved" shows on the once-a-minute write. The menu offers Resume, Controls, Fullscreen and Quit, and quitting always saves.
 
-**Open:** Recovery behavior for publication, the C++ JSON library and its integration, and the boundary representation used when generation changes. JsonCpp is the first parser candidate to evaluate; nlohmann/json is an alternative, not a second required dependency. A pinned, vendored implementation is acceptable; a single-header distribution is neither a requirement nor proof of simplicity.
+**Open:** Recovery behavior, and the boundary representation used when generation changes landforms rather than materials.
 
 ## Materials, building, and crafting
 
@@ -172,34 +176,25 @@ Materials have stable identities and definitions across terrain, inventories, cr
 
 Appearance and gameplay properties draw on the same material definition where practical. Shared textures, palettes, tints, overlays, and procedural details allow distinctive materials without requiring a unique authored texture for every variation.
 
-### Everything-is-a-block direction
+### Everything is a block
 
-The unifying idea to explore is one object vocabulary across terrain, carried gear, storage and placed objects, not separate item and block identities. A sword can be set down, render as a sword-shaped block, and allow the character to walk past it. Being a block does not mean filling a square visually or blocking movement.
+One object vocabulary spans terrain, carried gear, storage and placed objects, without separate item and block identities. A sword can be set down, render as a sword-shaped block, and let the character walk past it. Being a block does not mean filling a square visually or blocking movement.
 
-The implications remain open: occupancy, mutable or unique object state, wielding and using a carried block, stacking, storage, and the treatment of moving actors. The direction does not prescribe a particular serialization or entity architecture merely by its name. Inventory and storage need design in their own right, not only a larger hotbar.
+The implications remain open: occupancy, mutable or unique object state, wielding and using a carried block, and the treatment of moving actors. The direction does not prescribe a particular serialization or entity architecture merely by its name.
 
-### Spatial crafting experiment
+### Crafting as construction
 
-The current prototype experiments with crafting by assembling ingredient blocks in the world. Completing a valid configuration transforms it automatically, rather than opening a crafting-table interface. Automatic completion remains the next trial's behavior, with a more intentional finish gesture possible later. Playtesting will determine whether physical assembly is enjoyable. The executable uses the keyboard-first interaction described above, with foreground-only recipe matching.
+Crafting is construction. Placing ingredient blocks in a recipe's physical arrangement transforms them when the pattern completes, rather than opening a crafting grid. Completion is shown by a brief transformation, never an abrupt swap. Automatic completion is the starting choice; a more intentional finish action remains possible. Physical assembly stays only if it proves enjoyable in play.
 
 Some recipes require a working surface underneath. Ingredients are consumed; the required surface remains. A forge is used by literally building over it, not by being inside a nearby bonus radius.
 
-The forge was envisaged primarily for metallurgy and making metal tools, not as a generic melting or firing station. Whether generalizing it to glass, bricks and similar products serves the game remains open. The prototype's separate timber ingredient beneath the main ingredients but above the forge feels unnecessarily messy; that arrangement is not a settled requirement. Station requirements, fuel and ingredient geometry need further thought rather than copying the prototype's recipe shapes into the intended design.
+The forge serves metallurgy and the making of metal tools, not generic melting or firing. Whether it also serves glass, bricks and similar products is open. A fuel layer between the ingredients and the forge is not a requirement. Station requirements, fuel and ingredient geometry need further thought.
 
-A workbench provides batching. For batch size N, each ingredient placement consumes N units from inventory, and the completed recipe yields its ordinary output multiplied by N. This changes repetition, not the material cost per result. Unfinished ingredient quantities must survive saving and dismantling without changing their meaning.
+A workbench provides batching. For batch size N, each ingredient placement consumes N units from inventory, and the completed recipe yields its ordinary output multiplied by N. This changes repetition, not the material cost per result. Unfinished ingredient quantities survive saving and dismantling without changing their meaning.
 
-Stations compose through physical layout. To batch a recipe that requires a forge, put the forge and workbench beside each other and build the ingredient configuration over both. Neither station is consumed, and this does not require a separate bulk version of the recipe.
+Stations compose through physical layout. To batch a recipe that requires a forge, put the forge and workbench beside each other and build the ingredient configuration over both. Neither station is consumed, and no separate bulk version of the recipe is needed.
 
 **Open:** Material-family definitions, property ranges, resource-specific behavior, and how far crafting follows material properties rather than explicit recipes.
-
-## Character, tools, and risk
-
-These are unprioritized directions for exploration, not a committed feature list or build sequence:
-
-- Light RPG elements, including a modest skill tree and character customization. Appearance options include skin, hair, clothes and armor; the simple pose/overlay direction is described below. Their UI and progression remain later work, as do the skill tree's contents and purpose.
-- Tools that enable breaking particular blocks or constructing particular structures, plus activities such as fishing with a fishing pole. Their affordances, requirements and relationship to progression are not yet specified.
-- Inventory and storage that fit the carried/placed block model and keyboard-first play. The quick hand-selection trial is described above; wider capacity, organization, equipment and transfer behavior remain to be designed.
-- Health, hunger, stamina, suffocation, combat, falling, lava, fire and related risks. Stamina is strongly anticipated and belongs with this later work, not as a prerequisite for the current movement trial. Severity and interactions remain open; listing the other risks does not establish their inclusion. Any chosen systems must still serve the game's exploration, homes and connections, without introducing mandatory combat gates to major systems.
 
 ## Modules and extension
 
@@ -209,11 +204,11 @@ Shared operations are implemented once and generalized where that serves the gam
 
 The extension model has three tiers:
 
-- **Declarative content packs:** Blocks, recipes, textures, sprites, and supported generation definitions without programming. Carried and stored objects participate in this content path; the everything-is-a-block direction explores their shared model rather than introducing a separate item type here.
+- **Declarative content packs:** Blocks, recipes, textures, sprites, and supported generation definitions without programming. Carried and stored objects participate in this content path as blocks, not as a separate item type.
 - **Standard Lua scripts:** Gameplay extensions through the public game-facing API.
 - **Native C++ extensions or custom builds:** Deeper changes and separate games beyond the scripting API.
 
-Declarative content uses JSON as well as saves, rather than a collection of custom line syntaxes. Its familiar syntax and tooling lower the entry cost for modders, including those coming from Minecraft. Sharing a notation does not require content definitions and saved state to have identical structures or inherit Minecraft's game model. Images remain image assets, and behavior remains code; JSON does not replace either.
+Declarative content is JSON, like saves. Its familiar syntax and tooling lower the entry cost for modders, including those coming from Minecraft. Sharing a notation does not require content definitions and saved state to have identical structures or inherit Minecraft's game model. Images remain image assets, and behavior remains code; JSON replaces neither. Art travels by convention, the same way for first-party packs and mods: a pack's images are found by name, and later packs override earlier ones.
 
 Lua and declarative content are the portable extension mechanisms. Dynamic native loading on mobile and a universal stable native ABI are not requirements.
 
@@ -225,39 +220,39 @@ Extensions can introduce distinct semantic actions rather than being forced to o
 
 Disabling a module does not erase its saved identifiers. For example, a block saved as `crystal_expansion:blue_crystal` retains that identity even when the defining module is absent.
 
-The provisional interpretation is a common dirt-like fallback with ordinary collision, mining, and gameplay behavior. That interpretation does not replace the saved identifier. Restoring the module restores the original interpretation wherever the content has not been changed. Deliberate player actions can modify or destroy it.
+The provisional interpretation is a common dirt-like fallback with ordinary collision, mining, and gameplay behavior, drawn so that the missing identity is recognizable. That interpretation does not replace the saved identifier. Restoring the module restores the original interpretation wherever the content has not been changed. Deliberate player actions can modify or destroy it.
 
 **Open:** Module declaration and compatibility details, the supported generation extension surface, and the final appearance and behavior of unknown content.
 
 ## Runtime and presentation
 
-The selected stack is C++20, SDL3, CMake, and standard Lua. Native Linux is the first platform; macOS, Windows, Android, and iOS are intended later targets.
+The stack is C++20, SDL3, CMake, and standard Lua. The game is platform-neutral: its code depends on no single operating system, and supporting a platform means adding a thin surface for it, not reworking the game. Linux, macOS, Windows, Android, and iOS are all intended.
 
 The build never downloads its own dependencies: everything it needs is installed on the machine or kept in the repository.
 
 C++ owns world state and API contracts. Lua runs gameplay scripts against a public interface rather than accessing engine internals directly. Script-visible references need defined lifetimes across chunk loading and unloading. LuaLS annotations describe the API; where practical they are generated from its binding definitions rather than maintained as a parallel type system.
 
-C++ handles JSON input/output and can expose the relevant data to Lua as tables and scalar values through the game API; scripting does not require a second JSON parser. The binding must distinguish JSON null from Lua nil, and empty JSON arrays from empty objects, where those distinctions matter. Their exact representation belongs to the later scripting interface, not an implementation of Lua in the present refinement.
+C++ handles JSON input and output and can expose the relevant data to Lua as tables and scalar values through the game API; scripting does not require a second JSON parser. The binding distinguishes JSON null from Lua nil, and empty JSON arrays from empty objects, where those distinctions matter.
 
-The world model and game logic remain independent of SDL-specific presentation details. The flagship uses pixel-art tiles and sprites. A terminal presentation using ASCII or Unicode is a possible optional edition, not the flagship. The world and its content are not defined in terms of either pixels or terminal glyphs.
+The world model and game logic remain independent of SDL-specific presentation details. The flagship uses pixel-art tiles and sprites. The world and its content are not defined in terms of either pixels or terminal glyphs.
 
 Playing together starts as two players on one screen in one process: a second set of keys and a shared view, with no synchronization model needed.
 
-**Open:** Lua API shape and reference lifetime, mobile packaging, and whether networked multiplayer will become part of the game. It is not an established requirement with a chosen synchronization model.
+**Open:** Lua API shape and reference lifetime, mobile packaging, and whether networked multiplayer becomes part of the game.
 
 ## Art, licensing, and community
 
 ### Visual direction
 
-The target is appealing fantasy pixel art, not deliberately coarse placeholders or a nostalgic console/debug-screen treatment. Terraria is a reference for the broader visual experience; Habitica is a reference for compact, enjoyable character art and its fantasy register, not merely a resolution measurement. These are references for qualities, not assets to clone or templates for other game systems.
+The target is appealing fantasy pixel art, not deliberately coarse placeholders or a nostalgic console or debug-screen treatment. Terraria is a reference for the broader visual experience; Habitica is a reference for compact, enjoyable character art and its fantasy register, not merely a resolution measurement. These are references for qualities, not assets to clone or templates for other game systems.
 
-The chosen grid for the next pass is 16 native art pixels per block. Compose recognizable, expressive shapes and color clusters on that grid; do not progressively shrink a higher-resolution illustration until it remains barely recognizable. Richer colors are wanted, not dusty hues with pastel highlights. Shading within a material should remain subtle and describe its form; color richness does not require exaggerating local contrast. Blue can be a later clothing option, but is not the default outfit direction. The author's edited `scratch/sprite-final-right-16px.png` and `scratch/sprite-final-pick-16px.png` are the selected character and pick baseline for the next build. Preserve these originals and derive remaining poses from them rather than restarting the design. Other scratch studies are not adopted merely by existing.
+Art is drawn at 16 native pixels per block, with recognizable, expressive shapes and color clusters composed on that grid rather than a larger illustration shrunk until it is barely recognizable. Colors are rich, not dusty hues with pastel highlights. Shading within a material stays subtle and describes its form; color richness does not require exaggerating local contrast. Cartoon proportions are expected: a tool can be large against the body, and a crawl is a squash, not the standing figure laid flat.
 
-Use a handful of fixed poses on a shared pixel map. Gameplay needs true side profiles and a back-facing view, not a front-facing torso with the head turned sideways. Mirror a side pose for the opposite direction, including its held object: the tool switches to the camera-side hand for visibility. Background-facing still shows the held object. Tools can be large relative to the character, held diagonally and overlap the body; do not hide them or lengthen the arm to avoid overlap. Building materials should also be recognizable when carried.
+A handful of poses share one 16x16 pixel map: standing, walking, jumping, falling, crawling and striking in profile; a back view with its own two-step shuffle for moving along the wall; an upward strike from behind; and, in midair with S held, a leapfrog posture that carries the block beneath the body rather than on the back. Left is the mirror of right. The held object is in the camera-side hand, so turning around switches hands. The back view still shows the held object. A tool is one image drawn as the standing pose holds it; the game moves it to each pose's hand, mirrors it and turns it for a strike, so every tool, including a mod's, works in every pose. Building materials are recognizable when carried. A front view belongs to customization, for inspecting clothes; play does not need one.
 
-Keep a silhouette that permits later skin, hair, clothing and armor overlays on the same pose maps. This calls for consistent drawing coordinates, not a rig or an elaborate animation/customization system now. A future customization module may add a front view for inspecting clothes; gameplay has no need for that view in this pass.
+The silhouette permits later skin, hair, clothing and armor overlays on the same pose maps. That calls for consistent drawing coordinates, not a rig or an elaborate animation system.
 
-Render world art crisply at integer scale without smoothing its source pixels. Source-pixel density and camera framing are distinct choices; selecting 16px art does not by itself settle viewport size, display zoom or how much world is visible. Placeholder art may use the grid simply but must not establish a deliberately different resolution or visual register.
+World art renders crisply at integer scale without smoothing its source pixels. Source-pixel density and camera framing are distinct choices: the art grid does not by itself settle viewport size, display zoom or how much world is visible. Placeholder art is unfinished art on the same grid, never a different resolution or visual register.
 
 ### Licensing and community
 
@@ -268,3 +263,16 @@ Placeholder art can establish readable geography and interactions before the vis
 Community selection of future flagship artwork and an ongoing relationship with an artist are possibilities, not arrangements already made. Previous art can remain available where its licensing permits.
 
 **Open:** Flagship content and asset licenses, the remaining asset set, community selection and compensation arrangements, and commercialization. Monetization is not a prerequisite for making the game.
+
+## Possibilities
+
+These directions are worth keeping in view without committing to them. None has a settled shape or a place in the sequence, and listing one does not establish its inclusion.
+
+- **A construction assistant.** A separate, player-controlled helper in the world, not a remote cursor and not extra reach for the player. It can only place, from its own limited cargo, and works within the visible screen while the camera stays with the player. It might fly, perhaps through an upgrade. Its controls would need reconciling with arrow-key interface navigation, and its form, deployment, cargo handling, behavior off screen and place in progression are open. Unaided building must remain forgiving and useful without it.
+- **The belt as gear.** Something worn and upgradable that adds carrying capacity, rather than a view into the backpack.
+- **Light RPG elements.** A modest skill tree, and character customization of skin, hair, clothes and armor as overlays on the shared pose maps. A few alternate player characters, such as one with a purple shirt and long hair, could come before full customization.
+- **Tools and activities.** Tools that enable breaking particular blocks or constructing particular structures, and activities such as fishing.
+- **Risk.** Health, hunger, stamina, suffocation, combat, falling, lava, fire and related hazards, serving exploration, homes and connections without gating major systems behind combat. Restore points belong with hazards, if they come.
+- **New kinds of place.** Urban biomes, and people who live in the world. A rare biome that lifts the familiar surface into a sky continent, with the next biome continuing from the lower ground beneath it and slopes bringing altitudes back to normal within several chunks.
+- **A terminal edition.** An ASCII or Unicode presentation of the same game, secondary to the pixel-art flagship.
+- **Networked multiplayer**, beyond two players sharing a screen.

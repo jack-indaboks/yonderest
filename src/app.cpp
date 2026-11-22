@@ -113,10 +113,14 @@ Rect menu_item(int i) { return {menu_panel.x + 8, menu_panel.y + 22 + i * 18, me
 
 // Animation follows distance travelled, so steps keep pace with the ground at any speed.
 constexpr double walk_step = 1.5, crawl_step = 0.6; // Blocks per frame change.
-constexpr double swing_seconds = 0.1;
-const char* pose_for(const Player& p, double travelled) {
-    if (p.down) return int(travelled / crawl_step) % 2 ? "crawl-2" : "crawl-1";
-    if (p.facing == 0) return "back";
+constexpr double swing_seconds = 0.1, craft_seconds = 0.4;
+const char* pose_for(const Player& p, double travelled, bool swinging) {
+    // In midair with S held, the character leapfrogs over the block it is about to set down.
+    if (p.down) return !p.grounded ? "leapfrog" : int(travelled / crawl_step) % 2 ? "crawl-2" : "crawl-1";
+    if (p.facing == 0) {
+        if (p.up && swinging) return "strike-up";
+        return int(travelled / walk_step) % 2 ? "back-2" : "back";
+    }
     if (!p.grounded) return p.vy < 0 ? "jump" : "fall";
     if (travelled == 0) return "idle";
     return int(travelled / walk_step) % 2 ? "idle" : "stride";
@@ -138,7 +142,8 @@ public:
     ~View() {
         for (auto& [path, art] : images) { SDL_DestroyTexture(art.texture); SDL_DestroySurface(art.surface); }
         for (auto& [path, texture] : carried) SDL_DestroyTexture(texture);
-        for (auto& [path, texture] : turns) SDL_DestroyTexture(texture);
+        for (auto& [key, texture] : turns) SDL_DestroyTexture(texture);
+        SDL_DestroyTexture(entry);
         SDL_DestroyRenderer(renderer);
         SDL_DestroyWindow(window);
         SDL_Quit();
@@ -150,7 +155,7 @@ public:
             if (found == content.images.end()) throw std::runtime_error(std::string("Missing image: ") + name);
             return image(found->second);
         };
-        for (const char* name : {"idle", "stride", "jump", "fall", "crawl-1", "crawl-2", "back"}) {
+        for (const char* name : {"idle", "stride", "jump", "fall", "crawl-1", "crawl-2", "leapfrog", "back", "back-2", "strike-up"}) {
             auto found = content.poses.find(name);
             if (found == content.poses.end()) throw std::runtime_error(std::string("Missing pose: ") + name);
             const auto& pose = found->second;
@@ -164,6 +169,7 @@ public:
         grip = canvas(content.images.at("character-grip"));
         recipes_icon = named("recipes"); backpack_icon = named("backpack"); hand_icon = named("hand");
         unknown = named("unknown");
+        content_unknown = content.images.at("unknown");
         font = named("font");
         auto* glyphs = images.at(content.images.at("font")).surface;
         for (int code = 33; code < 127; ++code) {
@@ -177,6 +183,10 @@ public:
             advance[code] = last + 1;
         }
         advance[' '] = 3;
+        entry = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, ring_entry, ring_entry);
+        if (!entry) throw std::runtime_error(SDL_GetError());
+        SDL_SetTextureScaleMode(entry, SDL_SCALEMODE_NEAREST);
+        SDL_SetTextureBlendMode(entry, SDL_BLENDMODE_BLEND);
     }
 
     // Primitives.
@@ -244,7 +254,10 @@ public:
         world.retain(left - 6, top - 1, left + screen_width / tile + 6, top + screen_height / tile + 2);
     }
 
-    void scene(World& world, const Player& p, const Hands& hands, const char* pose, bool swinging) {
+    struct Transformation { Crafted made; double start; };
+
+    void scene(World& world, const Player& p, const Hands& hands, const char* pose, bool swinging,
+               const std::vector<Transformation>& crafts, double now) {
         // Open sky above ground; depth darkens the backdrop rather than inventing scenery.
         double daylight = 1 - std::clamp((p.y - surface(world.settings, int(p.x))) / 12.0, 0.0, 1.0);
         for (int y = 0; y < screen_height; y += 4)
@@ -266,13 +279,11 @@ public:
             for (int x = left; x <= left + screen_width / tile + 1; ++x)
                 for (int y = top; y <= top + screen_height / tile + 1; ++y) {
                     const auto& cell = world.cell(x, y, layer);
+                    int sx = x * tile - camera_x, sy = y * tile - camera_y, wx = wrap(x, world.settings.width());
+                    if (layer == Layer::foreground && transform(world, crafts, now, wx, y, sx, sy)) continue;
                     if (cell.id.empty()) continue;
                     const auto& m = world.content.material(cell.id);
-                    int sx = x * tile - camera_x, sy = y * tile - camera_y;
-                    // Mirror unoriented natural blocks by position so repeats read less like a grid.
-                    bool oriented = !m.station.empty() || !m.tool.empty();
-                    auto flip = !oriented && (wrap(x, world.settings.width()) * 7 + y * 13) % 3 == 0 ? SDL_FLIP_HORIZONTAL : SDL_FLIP_NONE;
-                    block(m, sx, sy, flip, layer == Layer::background ? Color{132, 128, 150} : Color{255, 255, 255});
+                    block(m, sx, sy, mirrored(m, wx, y), layer == Layer::background ? Color{132, 128, 150} : Color{255, 255, 255});
                     if (cell.quantity > 1) {
                         auto label = std::to_string(cell.quantity);
                         text(sx + tile - measure(label), sy + tile - 8, label, gold, true);
@@ -280,6 +291,56 @@ public:
                 }
         character(world.content, p, pose, swinging);
         if (hands.chooser) chooser(world.content, p, hands);
+    }
+
+    // Mirror unoriented natural blocks by position so repeats read less like a grid.
+    static SDL_FlipMode mirrored(const Material& m, int wx, int y) {
+        bool oriented = !m.station.empty() || !m.tool.empty();
+        return !oriented && (wx * 7 + y * 13) % 3 == 0 ? SDL_FLIP_HORIZONTAL : SDL_FLIP_NONE;
+    }
+
+    // A completed recipe resolves in place: its ingredients dissolve into light, which settles
+    // into the result. The world has already changed; this only shows it happening, and a cell
+    // the player has since changed shows the world as it is. Returns whether it drew the cell.
+    bool transform(World& world, const std::vector<Transformation>& crafts, double now, int wx, int y, int sx, int sy) {
+        for (const auto& [made, start] : crafts) {
+            double t = (now - start) / craft_seconds;
+            bool result = made.x == wx && made.y == y;
+            auto ingredient = std::ranges::find_if(made.consumed, [&](const Ingredient& i) { return i.x == wx && i.y == y; });
+            if (!result && ingredient == made.consumed.end()) continue;
+            if (world.block(wx, y) != (result ? made.output : Block{})) return false;
+            const Material* from = ingredient == made.consumed.end() ? nullptr : &world.content.material(ingredient->id);
+            const Material* to = result ? &world.content.material(made.output) : nullptr;
+            constexpr int bayer[16]{0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5};
+            constexpr Color light{255, 236, 178};
+            for (int py = 0; py < tile; ++py)
+                for (int px = 0; px < tile; ++px) {
+                    double order = (bayer[py % 4 * 4 + px % 4] + 0.5) / 16;
+                    auto before = from ? texel(*from, mirrored(*from, wx, y), px, py) : std::nullopt;
+                    auto after = to ? texel(*to, mirrored(*to, wx, y), px, py) : std::nullopt;
+                    std::optional<Color> c;
+                    if (t < 0.5) { if (before) c = order >= t * 2 ? *before : light; }
+                    else if (after && order < t * 2 - 1) c = *after;
+                    else if ((before || after) && order >= t * 2 - 1) c = light;
+                    if (!c) continue;
+                    SDL_SetRenderDrawColor(renderer, c->r, c->g, c->b, c->a);
+                    SDL_RenderPoint(renderer, float(sx + px), float(sy + py));
+                }
+            return true;
+        }
+        return false;
+    }
+
+    // One pixel of a block as drawn in the world, or nothing where it is transparent.
+    std::optional<Color> texel(const Material& m, SDL_FlipMode flip, int x, int y) {
+        if (flip == SDL_FLIP_HORIZONTAL) x = tile - 1 - x;
+        SDL_Surface* source = !m.texture.empty() ? (image(m.texture), images.at(m.texture).surface)
+            : m.missing ? images.at(content_unknown).surface : nullptr;
+        if (!source) return Color{Uint8(m.color[0]), Uint8(m.color[1]), Uint8(m.color[2])};
+        Uint8 r, g, b, a;
+        SDL_ReadSurfacePixel(source, x, y, &r, &g, &b, &a);
+        if (!a) return std::nullopt;
+        return Color{r, g, b, a};
     }
 
     // Body, then the held object, then the grip closing over it, all on the pose's 16x16 canvas
@@ -300,7 +361,8 @@ public:
         place(holding, tile, 0, 0);
         const auto& m = content.material(p.selected);
         if (m.held.empty()) place(carry(p.selected, m), 8, pose->block_x, pose->block_y);
-        else if (swinging) place(turned(m, idle), 2 * tile, dx - tile / 2, dy - tile / 2);
+        // A swing turns the tool toward what it strikes: down in front, or up overhead.
+        else if (swinging) place(turned(m, idle, p.up ? -1 : 1), 2 * tile, dx - tile / 2, dy - tile / 2);
         else place(canvas(m.held), tile, dx, dy);
         place(grip, tile, dx, dy);
     }
@@ -322,15 +384,28 @@ public:
         double radius = ready.size() > 6 ? 40 : 32;
         for (int i = 0; i < int(ready.size()); ++i) {
             double angle = 2 * std::numbers::pi * (i - selected) / ready.size() - std::numbers::pi / 2;
-            int x = px + int(std::lround(radius * std::cos(angle))) - 10;
-            int y = py + int(std::lround(radius * std::sin(angle))) - 10;
-            Rect box{x, y, 20, 20};
-            panel(box);
-            if (i == selected) frame(box, focus);
-            block(content.material(ready[i]), x + 2, y + 2);
-            auto count = std::to_string(p.inventory.at(ready[i]));
-            text(x + 20 - measure(count), y + 13, count, ink, true);
+            int x = px + int(std::lround(radius * std::cos(angle))) - ring_entry / 2;
+            int y = py + int(std::lround(radius * std::sin(angle))) - ring_entry / 2;
+            if (i == selected) {
+                ring(content, p, ready[i], x, y);
+                frame({x, y, ring_entry, ring_entry}, focus);
+                continue;
+            }
+            // The others are subdued as a whole, drawn apart and laid over the world at half opacity.
+            sdl(SDL_SetRenderTarget(renderer, entry));
+            SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
+            SDL_RenderClear(renderer);
+            ring(content, p, ready[i], 0, 0);
+            sdl(SDL_SetRenderTarget(renderer, nullptr));
+            draw(entry, {x, y, ring_entry, ring_entry}, SDL_FLIP_NONE, {255, 255, 255, 128});
         }
+    }
+
+    void ring(const Content& content, const Player& p, const Block& id, int x, int y) {
+        panel({x, y, ring_entry, ring_entry});
+        block(content.material(id), x + 2, y + 2);
+        auto count = std::to_string(p.inventory.at(id));
+        text(x + ring_entry - measure(count), y + 13, count, ink, true);
     }
 
     // Free-standing objects; one lifts a pixel when pointed at or open.
@@ -460,7 +535,7 @@ public:
     void controls() {
         static const std::pair<const char*, const char*> lines[]{
             {"A  D", "walk"}, {"Space", "jump"}, {";", "sprint while held"},
-            {"W", "face the rear wall; a held A or D takes over"}, {"S", "crawl, aim beneath your feet"},
+            {"W", "tap: face the rear wall; hold: reach up"}, {"S", "crawl, aim beneath your feet"},
             {"J", "hit or gather (hold to repeat)"}, {"K", "use: a workbench cycles batch 1, 5, 10"},
             {"L", "place; S + Space + L builds underfoot"}, {"H", "hand: empty, choose (J/K), equip"},
             {"I", "backpack: ready objects for H"}, {"R", "recipe book; Left/Right turn pages"}, {"P", "pause"}, {"Esc", "menu"}};
@@ -502,7 +577,10 @@ private:
     struct Image { SDL_Surface* surface; SDL_Texture* texture; };
     std::map<std::filesystem::path, Image> images;
     std::map<Block, SDL_Texture*> carried;
-    std::map<std::filesystem::path, SDL_Texture*> turns;
+    std::map<std::pair<std::filesystem::path, int>, SDL_Texture*> turns;
+    static constexpr int ring_entry = 20;
+    SDL_Texture* entry = nullptr; // One ring entry, drawn apart so it can be subdued as a whole.
+    std::filesystem::path content_unknown;
     struct PoseArt { const Pose* pose; SDL_Texture *holding, *bare; };
     std::map<std::string, PoseArt> poses;
     SDL_Texture *grip = nullptr, *font = nullptr, *unknown = nullptr;
@@ -529,11 +607,11 @@ private:
         return texture;
     }
 
-    // A swing: the held art turned a quarter clockwise about the knuckle, one pixel up and
-    // forward of the idle hand. Pixel-exact, so any tool swings without art of its own.
-    // The result is 32x32 with the held canvas's origin at (8, 8).
-    SDL_Texture* turned(const Material& m, const Pose& idle) {
-        auto found = turns.find(m.held);
+    // A swing: the held art turned a quarter about the knuckle, one pixel up and forward of the
+    // idle hand, clockwise (1) or counterclockwise (-1). Pixel-exact, so any tool swings without
+    // art of its own. The result is 32x32 with the held canvas's origin at (8, 8).
+    SDL_Texture* turned(const Material& m, const Pose& idle, int way) {
+        auto found = turns.find({m.held, way});
         if (found != turns.end()) return found->second;
         canvas(m.held);
         SDL_Surface* source = images.at(m.held).surface;
@@ -545,13 +623,13 @@ private:
             for (int x = 0; x < tile; ++x) {
                 Uint8 r, g, b, a;
                 SDL_ReadSurfacePixel(source, x, y, &r, &g, &b, &a);
-                if (a) SDL_WriteSurfacePixel(out, o + kx - (y - ky), o + ky + (x - kx), r, g, b, a);
+                if (a) SDL_WriteSurfacePixel(out, o + kx - way * (y - ky), o + ky + way * (x - kx), r, g, b, a);
             }
         SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, out);
         SDL_DestroySurface(out);
         if (!texture) throw std::runtime_error(SDL_GetError());
         SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
-        return turns.emplace(m.held, texture).first->second;
+        return turns.emplace(std::pair{m.held, way}, texture).first->second;
     }
 
     // A carried block: one fixed 8x8 icon, a 6x6 sampling of the tile inside the character's outline colour.
@@ -648,7 +726,11 @@ int run_game(Options o) {
         toast = s;
         toast_until = SDL_GetTicksNS() / 1e9 + seconds;
     };
-    auto report = [&](const ActionResult& r) { if (!r.quiet) notify(r.message); };
+    std::vector<View::Transformation> crafts;
+    auto report = [&](const ActionResult& r) {
+        if (!r.quiet) notify(r.message);
+        if (r.crafted) crafts.push_back({*r.crafted, SDL_GetTicksNS() / 1e9});
+    };
     auto swing = [&](double now) {
         report(hands.primary(world, player));
         next_action = now + 0.16;
@@ -657,7 +739,7 @@ int run_game(Options o) {
     if (!saved_settings) notify("Esc: menu and controls", 6);
     int frames = 0;
     auto release = [&] {
-        left = right = sprint = mining = jump = player.down = false;
+        left = right = sprint = mining = jump = player.down = player.up = false;
         hands.cancel();
         accumulated = 0;
     };
@@ -738,8 +820,11 @@ int run_game(Options o) {
                     if (key == SDLK_A) left = false;
                     if (key == SDLK_D) right = false;
                     if (key == SDLK_S) player.down = false;
-                    // Releasing W only matters if A or D is still held: that key takes over.
-                    if (key == SDLK_W && left != right) player.facing = right ? 1 : -1;
+                    // Letting go of W ends the reach up; a held A or D then takes over facing.
+                    if (key == SDLK_W && player.up) {
+                        player.up = false;
+                        if (left != right) player.facing = right ? 1 : -1;
+                    }
                     if (key == SDLK_SEMICOLON) sprint = false;
                     if (key == SDLK_J) mining = false;
                     continue;
@@ -806,17 +891,20 @@ int run_game(Options o) {
                 if (key == SDLK_A || key == SDLK_D) {
                     if (key == SDLK_A) left = true;
                     else right = true;
-                    player.facing = key == SDLK_A ? -1 : 1;
+                    // While reaching up, the character shuffles along the wall without turning.
+                    if (!player.up) player.facing = key == SDLK_A ? -1 : 1;
                 }
-                // Facing the rear wall and crawling exclude each other; the last key pressed wins.
+                // Reaching up and crawling exclude each other; the last key pressed wins.
                 if (key == SDLK_W) {
                     if (player.facing) side = player.facing;
                     player.facing = 0;
+                    player.up = true;
                     player.down = false;
                     hands.pending.reset();
                 }
                 if (key == SDLK_S) {
                     if (player.facing == 0) player.facing = side;
+                    player.up = false;
                     player.down = true;
                 }
                 if (key == SDLK_SPACE) jump = true;
@@ -855,7 +943,9 @@ int run_game(Options o) {
             if (world.save_changes(player)) notify("Saved");
             last_save = now;
         }
-        view.scene(world, player, hands, pose_for(player, travelled), now < swing_until);
+        std::erase_if(crafts, [&](const View::Transformation& c) { return now - c.start >= craft_seconds; });
+        bool swinging = now < swing_until;
+        view.scene(world, player, hands, pose_for(player, travelled, swinging), swinging, crafts, now);
         bool book_shown = recipes_open && !book.empty() && dialog != Dialog::inventory;
         if (book_shown)
             view.book(content, player, *book[recipe_index], recipe_index, int(book.size()), mouse_x, mouse_y);

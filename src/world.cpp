@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <optional>
 #include <stdexcept>
 
 namespace yonder {
@@ -130,26 +131,70 @@ Player spawn(World& world) {
 Target target(const Player& p) {
     int x = int(std::floor(p.x + player_width / 2));
     int y = int(std::floor(p.y + player_height / 2));
-    if (p.down) y = int(std::floor(p.y + player_height + contact_epsilon));
-    else if (p.facing > 0) x = int(std::ceil(p.x + player_width - contact_epsilon));
-    else if (p.facing < 0) x = int(std::floor(p.x + contact_epsilon)) - 1;
-    return {x, y, p.facing == 0 ? Layer::background : Layer::foreground};
+    // A cell the body overlaps by no more than the margin counts as beyond the edge.
+    if (p.up) y = int(std::floor(p.y + margin)) - 1;
+    else if (p.down) y = int(std::ceil(p.y + player_height - margin));
+    else if (p.facing > 0) x = int(std::ceil(p.x + player_width - margin));
+    else if (p.facing < 0) x = int(std::floor(p.x + margin)) - 1;
+    return {x, y, p.facing == 0 && !p.up ? Layer::background : Layer::foreground};
+}
+
+Target reach(World& world, const Player& p) {
+    Target own{int(std::floor(p.x + player_width / 2)), int(std::floor(p.y + player_height / 2))};
+    return world.block(own.x, own.y).empty() ? target(p) : own;
+}
+
+bool clear_of(World& world, Player& p, int x, int y) {
+    double left = x - (p.x + player_width), right = x + 1 - p.x;
+    double up = y - (p.y + player_height), down = y + 1 - p.y;
+    if (left >= 0 || right <= 0 || up >= 0 || down <= 0) return true;
+    std::optional<std::pair<double, double>> best;
+    for (auto [sx, sy] : {std::pair{left, 0.0}, {right, 0.0}, {0.0, up}, {0.0, down}})
+        if (std::abs(sx + sy) <= margin + contact_epsilon && !intersects(world, p.x + sx, p.y + sy)
+            && (!best || std::abs(sx + sy) < std::abs(best->first + best->second)))
+            best = {sx, sy};
+    if (!best) return false;
+    p.x = wrap(p.x + best->first, double(world.settings.width()));
+    p.y += best->second;
+    return true;
 }
 
 // The jump's height is liked as it is; both halves of the arc are kept brisk around it.
 constexpr double jump_height = 2.54, rise_gravity = 44, fall_gravity = 52, terminal_speed = 28;
+
+// The smallest shift of at most the margin, never against `way` (-1, 0 for either, or 1), that
+// brings the body's span [low, low + size) into line with a cell boundary where the body fits.
+template <class Fits>
+std::optional<double> slip(double low, double size, int way, Fits fits) {
+    std::optional<double> best;
+    for (double shift : {std::ceil(low) - low, std::floor(low + size) - (low + size)})
+        if (shift != 0 && std::abs(shift) <= margin && shift * way >= 0 && fits(shift)
+            && (!best || std::abs(shift) < std::abs(*best)))
+            best = shift;
+    return best;
+}
 
 void move(World& world, Player& p, int direction, bool jump, bool sprint) {
     p.grounded = intersects(world, p.x, p.y + 0.025);
     if (jump && p.grounded) { p.vy = -std::sqrt(2 * rise_gravity * jump_height); p.grounded = false; }
     double speed = p.down ? 2.0 : (sprint ? 9.0 : 6.0);
     double dx = direction * speed * tick_seconds;
-    // No automatic climbing: a step up is a jump.
+    // No automatic climbing: a step up is a jump. A body in the air slips past a corner it
+    // catches by no more than the margin, onward in the way it is already moving and never back,
+    // so a jump can enter an opening just its own height and a landing is never refused.
     if (!intersects(world, p.x + dx, p.y)) p.x += dx;
+    else if (auto shift = slip(p.y, player_height, p.vy < 0 ? -1 : 1, [&](double s) { return !intersects(world, p.x + dx, p.y + s); })) {
+        p.x += dx;
+        p.y += *shift;
+    }
     p.vy = std::min(terminal_speed, p.vy + (p.vy < 0 ? rise_gravity : fall_gravity) * tick_seconds);
     double dy = p.vy * tick_seconds;
     if (!intersects(world, p.x, p.y + dy)) p.y += dy;
-    else {
+    else if (auto shift = dy < 0 ? slip(p.x, player_width, direction, [&](double s) { return !intersects(world, p.x + s, p.y + dy); })
+                                 : std::nullopt) {
+        p.x += *shift;
+        p.y += dy;
+    } else {
         if (dy > 0) p.y = std::floor(p.y + player_height + dy) - player_height;
         else p.y = std::floor(p.y + dy) + 1;
         p.grounded = dy > 0;
@@ -164,7 +209,7 @@ ActionResult gather(World& world, Player& p, int x, int y, Layer layer) {
     if (old.id.empty()) return {false, "Empty space", true};
     const auto& needed = world.content.material(old.id).requires_tool;
     if (!needed.empty() && world.content.material(p.selected).tool != needed) return {false, "Requires a " + needed};
-    p.inventory[old.id] += old.quantity;
+    carry(p, old.id, old.quantity);
     world.set(x, y, {}, layer);
     // Taking a piece out can complete a shape that needs that cell empty.
     if (layer == Layer::foreground)
@@ -191,6 +236,11 @@ ActionResult adjust_workbench(World& world, int x, int y, Layer layer) {
     cell.batch = cell.batch == 1 ? 5 : (cell.batch == 5 ? 10 : 1);
     world.put(x, y, cell, layer);
     return {true, "Workbench batch x" + std::to_string(cell.batch)};
+}
+
+void carry(Player& p, const Block& id, std::int64_t count) {
+    if (!p.inventory.contains(id) && p.ready.size() < belt_size) p.ready.push_back(id);
+    p.inventory[id] += count;
 }
 
 void drop_empty(Player& p) {

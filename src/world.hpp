@@ -14,6 +14,13 @@ constexpr int chunk_size = 32;
 constexpr double player_width = 0.7;
 constexpr double player_height = 1.0;
 constexpr double tick_seconds = 1.0 / 120;
+// Within this margin the game reads intent instead of demanding pixel precision: a body in the
+// air slips onward past a corner it catches by no more, and a placement goes into a cell the
+// body overlaps by no more, moving the body clear. Half the body's width, so the body counts as
+// standing in the column that holds its centre.
+constexpr double margin = player_width / 2;
+// Readied stacks, shown as a ring around the character.
+constexpr std::size_t belt_size = 12;
 
 // Empty string is empty space. Every material has a stable string ID.
 using Block = std::string;
@@ -152,6 +159,7 @@ struct Player {
     std::vector<Block> ready;
     int facing = 1; // -1 left, 0 background, 1 right.
     bool down = false; // S held: crawling, aiming beneath the feet. The body stays a block tall.
+    bool up = false; // W held: facing the wall, aiming above the head.
     Unrecognized unknown{};
 };
 
@@ -160,6 +168,8 @@ struct Target {
     int x, y;
     Layer layer = Layer::foreground;
 };
+// The cell beyond the facing edge, beneath the feet with S, above the head with W held, or
+// the rear wall behind the body after a tap of W.
 Target target(const Player& player);
 
 class Save;
@@ -194,14 +204,29 @@ bool intersects(World& world, double x, double y);
 Player spawn(World& world);
 void move(World& world, Player& player, int direction, bool jump, bool sprint = false);
 
+// A completed recipe: the ingredients it consumed and the result standing at (x, y), in
+// wrapped world coordinates, so that presentation can show the change happening.
+struct Crafted {
+    int x, y;
+    Block output;
+    std::vector<Ingredient> consumed;
+};
 struct ActionResult {
     bool ok;
     std::string message;
     bool quiet = false; // Routine outcomes the world already shows.
+    std::optional<Crafted> crafted{};
 };
+// What J addresses: anything sharing the body's own cell, before the target.
+Target reach(World& world, const Player& player);
+// Moves the body clear of a cell it overlaps by no more than the margin, as little as possible.
+// Returns false if that cell cannot be cleared.
+bool clear_of(World& world, Player& player, int x, int y);
 // Taking a block into the inventory, and putting the held one into the world.
 ActionResult gather(World& world, Player& player, int x, int y, Layer layer = Layer::foreground);
 ActionResult place_at(World& world, Player& player, int x, int y, Layer layer = Layer::foreground);
+// Adds to the inventory. A newly carried kind is readied while the belt has room.
+void carry(Player& player, const Block& id, std::int64_t count);
 ActionResult adjust_workbench(World& world, int x, int y, Layer layer = Layer::foreground);
 // Only carried objects exist for the player: an emptied entry leaves the inventory,
 // its readiness and the hand.

@@ -18,6 +18,7 @@ struct Hands {
     ActionResult interact(World& world, Player& player);
     ActionResult place(World& world, Player& player, bool jumping);
     std::optional<ActionResult> step(World& world, Player& player);
+    ActionResult put(World& world, Player& player, const Target& target);
     void depleted(Player& player);
     void cancel();
 };

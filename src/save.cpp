@@ -98,7 +98,7 @@ std::optional<Player> Save::player() {
     for (const auto& id : inventory.keys())
         p.inventory[id] = inventory[id.c_str()].integer(0, std::numeric_limits<std::int64_t>::max());
     auto ready = root["ready"];
-    if (ready.size() > 12) ready.fail("can hold at most twelve objects");
+    if (ready.size() > belt_size) ready.fail("can hold at most twelve objects");
     for (Json::ArrayIndex i = 0; i < ready.size(); ++i) p.ready.push_back(ready[i].text());
     p.unknown = root.rest({"x", "y", "facing", "held", "last_held", "inventory", "ready"});
     drop_empty(p); // An emptied entry, or readiness without stock, is not carried.

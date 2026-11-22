@@ -88,12 +88,18 @@ std::optional<ActionResult> craft(World& world, Player& p, int changed_x, int ch
         for (auto [x, y] : origins(world, r, changed_x, changed_y, nullptr)) {
             auto a = assembly(world, r, x, y, true);
             if (!a) continue;
-            for (const auto& i : r.shape) if (!i.id.empty()) world.set(x + i.x, y + i.y, {});
+            int width = world.settings.width();
+            Crafted made{wrap(x + r.output_x, width), y + r.output_y, r.output, {}};
+            for (const auto& i : r.shape)
+                if (!i.id.empty()) {
+                    world.set(x + i.x, y + i.y, {});
+                    made.consumed.push_back({wrap(x + i.x, width), y + i.y, i.id});
+                }
             auto output = std::int64_t(r.amount) * a->quantity;
-            world.put(x + r.output_x, y + r.output_y, Cell{r.output, 1, true});
+            world.put(made.x, made.y, Cell{r.output, 1, true});
             // One result stands in the world; only a surplus is carried.
-            if (output > 1) p.inventory[r.output] += output - 1;
-            return ActionResult{true, "Made " + world.content.material(r.output).name + " x" + std::to_string(output)};
+            if (output > 1) carry(p, r.output, output - 1);
+            return ActionResult{true, "Made " + world.content.material(r.output).name + " x" + std::to_string(output), false, made};
         }
     return {};
 }

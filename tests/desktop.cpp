@@ -51,6 +51,7 @@ int main(int argc, char** argv) {
         bool reference = argc >= 3 && std::string(argv[2]) == "reference";
         bool facing = argc >= 3 && std::string(argv[2]) == "facing";
         bool crawl = argc >= 3 && std::string(argv[2]) == "crawl";
+        bool reach = argc >= 3 && std::string(argv[2]) == "reach";
         std::string content = argv[1], save = save_path.string();
         {
             Settings settings;
@@ -68,7 +69,11 @@ int main(int argc, char** argv) {
                 for (int y : {28, 29, 30}) world.set(x, y, "base:stone", Layer::background);
             }
             Player p;
-            if (facing || crawl) {
+            if (reach) {
+                p.x = 10.15; p.y = 29; p.selected = "workshop:pick";
+                p.inventory["workshop:pick"] = 1;
+                for (int x = 9; x <= 13; ++x) world.set(x, 28, "base:stone");
+            } else if (facing || crawl) {
                 p.x = 10.15; p.y = 29; p.selected = "base:soil";
                 p.inventory["base:soil"] = 3;
                 for (int x = 9; x <= 14; ++x) for (int y : {28, 29}) world.set(x, y, {}, Layer::background);
@@ -105,7 +110,16 @@ int main(int argc, char** argv) {
                     std::this_thread::sleep_for(5ms);
                 require(window_id != 0, "desktop did not show a window");
                 std::this_thread::sleep_for(100ms);
-                if (facing) {
+                if (reach) {
+                    key(SDLK_W, true); tap(SDLK_J);       // held W digs straight up
+                    std::this_thread::sleep_for(40ms);
+                    key(SDLK_D, true);                    // and shuffles along the wall without turning
+                    std::this_thread::sleep_for(160ms);
+                    tap(SDLK_J);
+                    std::this_thread::sleep_for(40ms);
+                    key(SDLK_W, false);                   // the held D then takes over facing
+                    key(SDLK_D, false);
+                } else if (facing) {
                     key(SDLK_D, true); key(SDLK_W, true); // walking right, turned to the wall
                     std::this_thread::sleep_for(40ms);
                     key(SDLK_W, false);                   // D is still held: it takes over
@@ -118,7 +132,7 @@ int main(int argc, char** argv) {
                 } else if (crawl) {
                     key(SDLK_S, true);
                     std::this_thread::sleep_for(40ms);
-                    key(SDLK_W, true); tap(SDLK_L);       // W, pressed last, ends the crawl: L reaches the rear wall level with the body
+                    key(SDLK_W, true); tap(SDLK_L);       // W, pressed last, ends the crawl: L reaches above the head
                     std::this_thread::sleep_for(40ms);
                 } else if (reference) {
                     // The recipe reference stays up while building and never acts on the world.
@@ -128,7 +142,7 @@ int main(int argc, char** argv) {
                     tap(SDLK_L);       // swallowed by the open menu, or it would place in front
                     tap(SDLK_RETURN);  // Resume; Enter must not reach the world
                     tap(SDLK_I); tap(SDLK_ESCAPE); // the inventory closes; it does not open the menu
-                    key(SDLK_W, true); tap(SDLK_L); key(SDLK_W, false); // so this rear placement reaches the world
+                    tap(SDLK_W); tap(SDLK_L);      // so this rear placement reaches the world
                     tap(SDLK_ESCAPE); tap(SDLK_DOWN); tap(SDLK_RETURN); // Controls page
                     tap(SDLK_ESCAPE); tap(SDLK_L); // back to the menu, which swallows L
                     tap(SDLK_ESCAPE);              // play again
@@ -147,7 +161,7 @@ int main(int argc, char** argv) {
                         key(SDLK_L, false);
                     }
                     key(SDLK_S, false);
-                    key(SDLK_W, true); tap(SDLK_L); key(SDLK_W, false);
+                    tap(SDLK_W); tap(SDLK_L);
                     tap(SDLK_D); tap(SDLK_L); // place a floating foreground block to the right
                     key(SDLK_A, true); // walk away: A turns the character, placing or not
                     std::this_thread::sleep_for(200ms);
@@ -159,9 +173,9 @@ int main(int argc, char** argv) {
                     key(SDLK_S, false);
                     std::this_thread::sleep_for(300ms);
                     tap(SDLK_I); tap(SDLK_J); tap(SDLK_K);
-                    key(SDLK_W, true); key(SDLK_L, true);
+                    tap(SDLK_W); key(SDLK_L, true);
                     std::this_thread::sleep_for(200ms);
-                    key(SDLK_L, false); key(SDLK_W, false);
+                    key(SDLK_L, false);
                     // The emptied soil has left; timber and the pick remain.
                     tap(SDLK_I); tap(SDLK_J);
                     tap(SDLK_D); tap(SDLK_J); tap(SDLK_K); // equip the pick
@@ -172,10 +186,10 @@ int main(int argc, char** argv) {
                     key(SDLK_D, true);
                     std::this_thread::sleep_for(160ms); // choosing while walking, once clear of the hole
                     key(SDLK_D, false);
-                    key(SDLK_W, true); // aim at the prepared rear wall while held
+                    tap(SDLK_W); // aim at the prepared rear wall
                     tap(SDLK_H); // equip pick with J still physically held
                     std::this_thread::sleep_for(220ms);
-                    key(SDLK_J, false); key(SDLK_W, false);
+                    key(SDLK_J, false);
                     // Mouse and number-row input no longer operate on the world.
                     tap(SDLK_1);
                     SDL_Event mouse{};
@@ -204,7 +218,11 @@ int main(int argc, char** argv) {
             Content blocks;
             blocks.load(std::filesystem::path(content) / "base");
             World world(result, blocks, settings);
-            if (facing) {
+            if (reach) {
+                require(world.block(10, 28).empty() && world.block(11, 28).empty() && world.block(12, 28) == "base:stone",
+                        "W held digs the cell above the head, standing and while shuffling");
+                require(p.inventory.at("base:stone") == 2 && p.facing == 1, "letting go of W hands facing to the held D");
+            } else if (facing) {
                 bool front = false, rear = false, dug = false;
                 for (int x = 10; x <= 14; ++x) {
                     front |= world.block(x, 29) == "base:soil";
@@ -215,8 +233,8 @@ int main(int argc, char** argv) {
                 require(rear, "letting go of W alone leaves the character facing the rear wall");
                 require(dug && p.inventory.at("base:soil") == 2, "S pressed while facing the wall turns sideways to crawl and aim beneath");
             } else if (crawl) {
-                require(world.block(10, 29, Layer::background) == "base:soil" && p.facing == 0,
-                        "W pressed while crawling ends the crawl to face the wall");
+                require(world.block(10, 28) == "base:soil" && p.facing == 0,
+                        "W pressed while crawling ends the crawl and reaches up");
             } else if (reference) {
                 require(world.block(11, 29).empty() && world.block(10, 29, Layer::background) == "base:soil",
                         "only the rear placement in play reached the world; dialogs swallowed the others");

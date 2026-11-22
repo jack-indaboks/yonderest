@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <tuple>
 
 namespace yonder {
 
@@ -41,7 +42,7 @@ ActionResult Hands::mark(Player& p, const Block& id) {
         return {true, "Unreadied"};
     }
     if (!p.inventory.contains(id)) return {false, "Not carried"};
-    if (p.ready.size() == 12) return {false, "Twelve objects are already readied"};
+    if (p.ready.size() == belt_size) return {false, "Twelve objects are already readied"};
     p.ready.push_back(id);
     return {true, "Readied"};
 }
@@ -56,7 +57,7 @@ ActionResult Hands::primary(World& world, Player& p) {
     pending.reset();
     if (!p.selected.empty() && world.content.material(p.selected).tool.empty())
         return {false, "Use empty hand or a tool"};
-    auto t = target(p);
+    auto t = reach(world, p);
     return gather(world, p, t.x, t.y, t.layer);
 }
 
@@ -66,25 +67,31 @@ ActionResult Hands::interact(World& world, Player& p) {
     return adjust_workbench(world, t.x, t.y, t.layer);
 }
 
+// A solid block placed where the body overlaps by no more than the margin moves the body clear.
+ActionResult Hands::put(World& world, Player& p, const Target& t) {
+    auto [x, y] = std::pair{p.x, p.y};
+    if (t.layer == Layer::foreground && world.content.material(p.selected).solid
+        && world.block(t.x, t.y).empty() && !clear_of(world, p, t.x, t.y))
+        return {false, "No room"};
+    auto result = place_at(world, p, t.x, t.y, t.layer);
+    if (!result.ok) std::tie(p.x, p.y) = std::pair{x, y};
+    depleted(p);
+    return result;
+}
+
 ActionResult Hands::place(World& world, Player& p, bool jumping) {
     pending.reset();
     auto t = target(p);
     if (p.selected.empty()) return {false, "Empty hand"};
     if (p.down && t.layer == Layer::foreground) {
-        double feet = p.y + player_height;
-        t.y = int(std::ceil(feet - 0.00001));
+        // Rising out of an occupied cell, the request waits for the feet to clear the one above.
         bool rising = p.vy < 0 || (jumping && p.grounded);
-        if (rising && !world.block(t.x, t.y).empty()) {
-            --t.y;
-            if (world.block(t.x, t.y).empty() && feet > t.y + 0.00001) {
-                pending = t;
-                return {true, "Placement waits for clearance", true};
-            }
+        if (rising && !world.block(t.x, t.y).empty() && world.block(t.x, t.y - 1).empty()) {
+            pending = Target{t.x, t.y - 1};
+            return {true, "Placement waits for clearance", true};
         }
     }
-    auto result = place_at(world, p, t.x, t.y, t.layer);
-    depleted(p);
-    return result;
+    return put(world, p, t);
 }
 
 std::optional<ActionResult> Hands::step(World& world, Player& p) {
@@ -95,17 +102,16 @@ std::optional<ActionResult> Hands::step(World& world, Player& p) {
         pending.reset();
         return ActionResult{false, "Placement cancelled", true};
     }
-    if (p.y + player_height > t.y + 0.00001) {
-        if (p.vy >= 0) {
+    double reaching = p.y + player_height - t.y; // How far the feet still reach into the cell.
+    if (reaching > 0.00001) {
+        if (p.vy < 0) return std::nullopt;
+        if (reaching > margin) {
             pending.reset();
             return ActionResult{false, "No clearance beneath you"};
         }
-        return std::nullopt;
     }
     pending.reset();
-    auto result = place_at(world, p, t.x, t.y, t.layer);
-    depleted(p);
-    return result;
+    return put(world, p, t);
 }
 
 }

@@ -69,12 +69,14 @@ void targets(World& w) {
     require(walk.vy == run.vy && walk.y == run.y && run.x > walk.x, "running jumps change travel, not the jump impulse");
     p = standing(w.settings.width() - 0.85);
     require(wrap(target(p).x, w.settings.width()) == 0, "direct forward reach crosses the world seam");
+    p = standing(); p.facing = 0; p.up = true;
+    require(target(p).x == 10 && target(p).y == 28 && target(p).layer == Layer::foreground, "W held reaches the cell above the head");
 }
 
 void boundary_placement(World& w) {
     for (auto [x, facing, expected] : std::vector<std::tuple<double, int, int>>{
-             {10.3, 1, 11}, {10.6, 1, 12}, {10.8, -1, 9}, {11.0, -1, 10},
-             {w.settings.width() - 0.4, 1, 1}, {0.1, -1, w.settings.width() - 1}}) {
+             {10.3, 1, 11}, {10.6, 1, 11}, {10.7, 1, 12}, {10.8, -1, 10}, {11.0, -1, 10},
+             {w.settings.width() - 0.4, 1, 0}, {0.1, -1, w.settings.width() - 1}}) {
         clear(w);
         auto p = standing(x);
         p.facing = facing;
@@ -84,7 +86,7 @@ void boundary_placement(World& w) {
         auto result = h.place(w, p, false);
         require(result.ok, "placement at a tile boundary: " + result.message);
         require(w.block(expected, 29) == "base:soil" && p.inventory.at("base:soil") == 1,
-                "place in the first whole cell beyond the facing edge, including at the seam");
+                "place beyond the facing edge, in a cell the body overlaps by no more than the margin, including at the seam");
         require(!intersects(w, p.x, p.y), "placement stays outside the character's body");
         h.hand(p);
         require(h.primary(w, p).ok && w.block(expected, 29).empty(), "gathering addresses that same cell in front of the body");
@@ -164,6 +166,61 @@ void actions(World& w) {
     require(!w.solid(11, 29) && w.block(11, 29) == "workshop:pick", "placed tool has its own shape and no collision");
     for (int i = 0; i < 25; ++i) move(w, p, 1, false);
     require(p.x > 11 && !intersects(w, p.x, p.y), "the character can walk past a set-down tool");
+    p.x = 11.15;
+    w.set(12, 29, "base:timber");
+    require(h.primary(w, p).ok && p.inventory.at("workshop:pick") == 1 && w.block(11, 29).empty()
+                && w.block(12, 29) == "base:timber",
+            "J takes back what shares the character's own cell before the block in front");
+}
+
+void forgiveness(World& w) {
+    for (int opening : {28, 27}) {
+        clear(w);
+        for (int y = 20; y < 30; ++y) if (y != opening) w.set(12, y, "base:stone");
+        auto p = standing(10.15);
+        move(w, p, 1, true);
+        bool entered = false;
+        for (int i = 0; i < 120; ++i) {
+            move(w, p, 1, false);
+            entered |= p.x > 11.5 && p.x < 12 && p.y == opening;
+        }
+        require(entered, "a running jump enters a one-block opening " + std::to_string(29 - opening) + " up");
+    }
+    clear(w);
+    Hands h;
+    auto p = standing(); p.inventory["base:soil"] = 3; h.equip(p, "base:soil");
+    p.down = true; move(w, p, 0, true); tick(w, p, h, 17);
+    require(p.y + player_height > 28.1, "fixture: the feet are still a few pixels into the second row up");
+    require(h.place(w, p, false).ok && w.block(10, 28) == "base:soil" && w.block(10, 29).empty() && !intersects(w, p.x, p.y),
+            "a press a few pixels short of clearing two rows still builds two up, lifting the body clear");
+    clear(w);
+    p = standing(); p.facing = 0; p.up = true; p.inventory["base:soil"] = 3; h.equip(p, "base:soil");
+    require(h.place(w, p, false).ok && w.block(10, 28) == "base:soil", "W held roofs over the head");
+    require(h.primary(w, p).ok == false, "a held block does not dig");
+    h.hand(p);
+    require(h.primary(w, p).ok && w.block(10, 28).empty(), "W held digs straight up");
+}
+
+void belt(World& w) {
+    clear(w);
+    Hands h;
+    auto p = standing();
+    w.set(11, 29, "base:timber");
+    h.primary(w, p);
+    require(p.ready == std::vector<Block>{"base:timber"}, "a newly carried kind is readied");
+    h.equip(p, "base:timber");
+    h.place(w, p, false);
+    require(p.ready.empty() && !p.inventory.contains("base:timber"), "using up a stack ends its readiness");
+    h.primary(w, p);
+    require(p.ready == std::vector<Block>{"base:timber"}, "gathered again, it is readied again");
+    h.mark(p, "base:timber");
+    w.set(11, 29, "base:timber");
+    h.primary(w, p);
+    require(p.ready.empty() && p.inventory.at("base:timber") == 2, "more of an unreadied kind stays unreadied");
+    for (int i = 0; i < 12; ++i) carry(p, "test:" + std::to_string(i), 1);
+    require(p.ready.size() == 12 && p.ready.back() == "test:11", "new kinds fill the belt");
+    carry(p, "test:12", 1);
+    require(p.ready.size() == 12 && p.inventory.contains("test:12"), "a full belt readies nothing more");
 }
 
 // One result stands in the world; only a surplus is carried.
@@ -209,9 +266,9 @@ void jump_building(World& w) {
     move(w, p, 0, true);
     tick(w, p, h, 57); // Descending, but with a whole clear cell beneath the feet.
     require(p.vy > 0, "descent fixture");
-    auto t = int(std::ceil(p.y + player_height - 0.00001));
-    require(h.place(w, p, false).ok && w.block(10, t) == "base:soil", "descent places in the first fully clear cell beneath the body");
-    require(!intersects(w, p.x, p.y), "late placement never embeds or lifts the character");
+    auto t = int(std::ceil(p.y + player_height - margin));
+    require(h.place(w, p, false).ok && w.block(10, t) == "base:soil", "descent places in the first cell beneath the body, give or take the margin");
+    require(!intersects(w, p.x, p.y), "late placement never embeds the character");
 
     clear(w); p = standing(); p.inventory["base:soil"] = 3; h.equip(p, "base:soil");
     w.set(10, 28, "base:stone");
@@ -321,7 +378,7 @@ int main(int argc, char** argv) {
         {
             Save save(scratch / "play"); save.write_settings(settings);
             World w(save, content, settings);
-            targets(w); boundary_placement(w); selection(); actions(w); crafting(w); jump_building(w); rear_wall(w);
+            targets(w); boundary_placement(w); selection(); actions(w); forgiveness(w); belt(w); crafting(w); jump_building(w); rear_wall(w);
         }
         persist(scratch / "persist", content, settings);
         std::filesystem::remove_all(scratch);

@@ -32,7 +32,7 @@ std::string replaced(std::string text, const std::string& from, const std::strin
 
 // Everything a save holds survives writing and reading, including values JSON tools often mangle.
 void round_trip(const std::filesystem::path& folder, Settings settings) {
-    settings.seed = 1795207967560012382ULL; // Beyond 2^53: a double would round it.
+    settings.seed = 9007199254740993ULL; // 2^53 + 1: a double would round it.
     Player before;
     before.x = 305.21666666685525; before.y = 115;
     before.facing = 0;

@@ -535,10 +535,10 @@ public:
     void controls() {
         static const std::pair<const char*, const char*> lines[]{
             {"A  D", "walk"}, {"Space", "jump"}, {";", "sprint while held"},
-            {"W", "tap: face the rear wall; hold: reach up"}, {"S", "crawl, aim beneath your feet"},
+            {"W", "tap: face the background; hold: reach up"}, {"S", "crawl, aim beneath your feet"},
             {"J", "hit or gather (hold to repeat)"}, {"K", "use: a workbench cycles batch 1, 5, 10"},
             {"L", "place; S + Space + L builds underfoot"}, {"H", "hand: empty, choose (J/K), equip"},
-            {"I", "backpack: ready objects for H"}, {"R", "recipe book; Left/Right turn pages"}, {"P", "pause"}, {"Esc", "menu"}};
+            {"I", "inventory: ready objects for H"}, {"R", "recipe book; Left/Right turn pages"}, {"P", "pause"}, {"Esc", "menu"}};
         Rect r{(screen_width - 300) / 2, 46, 300, 22 + int(std::size(lines)) * 12 + 30};
         panel(r);
         centered({r.x, r.y + 5, r.w, 12}, "Controls");

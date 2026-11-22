@@ -2,6 +2,16 @@
 
 What changed in each tagged version of Yonderest, newest first. What is planned next is in [ROADMAP.md](ROADMAP.md).
 
+## 0.1.0 - 2026-11-21
+
+- Hold W to reach up: dig out the block above your head or place one there, standing or in a jump. While W is held, A and D shuffle sideways without turning. A tap of W still turns you toward the background.
+- Edges are less picky. A jump that catches a corner by a few pixels slips past it, so you can jump into an opening one block high, and a placement while you overlap the next cell by a few pixels goes there, beneath you in a jump as well as in front.
+- J first takes back an object you are standing in, such as a tool you set down.
+- Anything new you pick up is added to the picker while there is room.
+- The picker fades every object but the selected one.
+- A completed recipe dissolves into light and resolves into what it makes, instead of swapping at once.
+- New poses: a shuffle while facing the background, an upward strike seen from behind, and a leapfrog over the block you are carrying when in midair with S held. Character packs can draw them as `back-2`, `strike-up` and `leapfrog`.
+
 ## 0.0.5 - 2026-11-20
 
 - Worlds are folders of plain JSON files that can be read and edited by hand. Saves from earlier versions cannot be opened.

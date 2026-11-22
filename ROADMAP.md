@@ -2,7 +2,7 @@
 
 This roadmap says when features arrive. What each feature is belongs to [DESIGN.md](DESIGN.md), the game as it currently runs is described in [README.md](README.md), and what each tagged version changed is in [CHANGELOG.md](CHANGELOG.md). Milestones are playable outcomes, not dates.
 
-## Next: the first playable release
+## Next: a world worth inhabiting
 
 1. **A richer world.** The varied rear layer with its own resources, the backdrop behind it, and landscape features at their own scale, so that worlds can grow to the starting world's intended size. Generation changes that reshape land settle at their boundaries with saved territory.
 2. **Carrying and storage.** The finite backpack, stack sizes and in-world storage.

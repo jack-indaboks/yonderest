@@ -258,11 +258,13 @@ World art renders crisply at integer scale without smoothing its source pixels. 
 
 Code and the prototype's original material data and code-drawn placeholder visuals are licensed under MIT. This does not decide the license for future flagship artwork. Other content and artwork have their own licensing decisions; their licenses and provenance must be clear.
 
+Contributed and imported art may carry any Creative Commons license that leaves the game able to use it. Attribution and share-alike licenses suit it: share-alike binds the art and its modified versions, not the game around it. Non-commercial licenses are discouraged, since they close distribution doors as well as commercial ones. No-derivatives licenses are unsuitable, because tints, palettes and overlays modify the art they are applied to.
+
 Placeholder art can establish readable geography and interactions before the visual identity is complete. AI-generated artwork may be used with transparent provenance. Human-created replacements and texture packs are encouraged, including compatibility with procedural palettes and material variation.
 
 Community selection of future flagship artwork and an ongoing relationship with an artist are possibilities, not arrangements already made. Previous art can remain available where its licensing permits.
 
-**Open:** Flagship content and asset licenses, the remaining asset set, community selection and compensation arrangements, and commercialization. Monetization is not a prerequisite for making the game.
+**Open:** The license of flagship artwork, the remaining asset set, community selection and compensation arrangements, and commercialization. Monetization is not a prerequisite for making the game.
 
 ## Possibilities
 

@@ -91,7 +91,7 @@ ActionResult Hands::place(World& world, Player& p, bool jumping) {
             return {true, "Placement waits for clearance", true};
         }
     }
-    return put(world, p, t);
+    return put(world, p, favor(world, p, t, false));
 }
 
 std::optional<ActionResult> Hands::step(World& world, Player& p) {

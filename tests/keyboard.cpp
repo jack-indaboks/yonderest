@@ -16,6 +16,7 @@ void require(bool yes, const std::string& what) {
 }
 
 void clear(World& world) {
+    world.load(-10, 20, 50, 31);
     for (int x = -10; x < 50; ++x) {
         for (int y = 20; y < 30; ++y) {
             world.set(x, y, {});
@@ -199,6 +200,22 @@ void forgiveness(World& w) {
     require(h.primary(w, p).ok == false, "a held block does not dig");
     h.hand(p);
     require(h.primary(w, p).ok && w.block(10, 28).empty(), "W held digs straight up");
+
+    clear(w);
+    p = standing(); move(w, p, 0, true);
+    require(target(p).y == 28, "a jump aims one up from the moment it leaves the ground");
+    // Just past the switch to two up, the body still overlaps the row below by half a block.
+    auto rising = [&] {
+        p = standing(); h = Hands{};
+        move(w, p, 0, true);
+        while (target(p).y != 27) move(w, p, 0, false);
+    };
+    clear(w); w.set(11, 28, "base:stone");
+    rising();
+    require(h.primary(w, p).ok && w.block(11, 28).empty(), "J in a jump takes the block in the other row the body overlaps when the aimed cell is empty");
+    clear(w); w.set(11, 28, "base:stone"); w.set(11, 27, "base:stone");
+    rising();
+    require(h.primary(w, p).ok && w.block(11, 27).empty() && !w.block(11, 28).empty(), "deliberate aim still wins when the aimed cell can be hit");
 }
 
 void belt(World& w) {
@@ -332,36 +349,54 @@ void rear_wall(World& w) {
             "foreground workbench batching does not charge N for a single rear-wall block");
 }
 
+// A small world: eight chunks around and four tall.
+Settings small(const std::filesystem::path& root) {
+    Settings settings; settings.seed = 42; settings.columns = 8; settings.rows = 4;
+    settings.terrain = load_terrain(root / "expedition");
+    return settings;
+}
+
 void persist(const std::filesystem::path& file, const Content& content, const Settings& settings) {
     Player before;
+    // Cells on both sides of a vertical and a horizontal chunk boundary.
+    int edge = chunk_size - 1;
     {
-        Save save(file); save.write_settings(settings);
-        World w(save, content, settings); clear(w);
-        w.put(31, 31, Cell{"base:timber", 5, true});
-        w.put(31, 31, Cell{"missing:wall", 1, true}, Layer::background);
-        w.put(0, 32, Cell{"workshop:workbench", 1, true, 10}, Layer::background);
+        Save save(file);
+        auto folder = save.world(Save::starting_world);
+        folder.write_settings(settings);
+        World w(save, folder, content, settings); clear(w);
+        w.load(edge, edge, edge + 1, edge + 1);
+        w.put(edge, edge, Cell{"base:timber", 5, true});
+        w.put(edge, edge, Cell{"missing:wall", 1, true}, Layer::background);
+        w.put(edge + 1, edge + 1, Cell{"workshop:workbench", 1, true, 10}, Layer::background);
         before = standing(); before.inventory["base:soil"] = 7;
+        before.world = Save::starting_world;
         before.inventory["workshop:pick"] = 1;
         before.ready = {"workshop:pick", "base:soil"};
         before.selected = "base:soil"; before.last_selected = "workshop:pick";
         before.facing = 0;
-        w.retain(400, 150, 440, 180); w.save_changes(before);
+        w.retain(300, 200, 340, 220); w.save_changes(before);
     }
-    {
-        Save save(file); World w(save, content, *save.settings());
+    auto reopen = [&](auto&& check) {
+        Save save(file);
         auto p = *save.player();
+        auto folder = save.world(p.world);
+        World w(save, folder, content, *folder.settings());
+        w.load(edge, edge, edge + 1, edge + 1);
+        check(w, p);
+    };
+    reopen([&](World& w, Player& p) {
         require(p.inventory == before.inventory && p.ready == before.ready && p.selected == before.selected
-            && p.last_selected == before.last_selected && p.facing == 0 && p.y == before.y,
-            "inventory, readiness, last selection, facing and position survive restart");
-        require(w.cell(31, 31) == Cell{"base:timber", 5, true}, "foreground batch state survives the new format");
-        require(w.block(31, 31, Layer::background) == "missing:wall", "missing background content retains its stable ID");
-        require(w.cell(0, 32, Layer::background).batch == 10, "both layers survive eviction and independent vertical/horizontal chunk boundaries");
-        w.set(31, 31, {}, Layer::background); w.save_changes(p);
-    }
-    {
-        Save save(file); World w(save, content, *save.settings());
-        require(w.block(31, 31, Layer::background).empty() && w.cell(31, 31).quantity == 5, "background removal persists without changing foreground state");
-    }
+            && p.last_selected == before.last_selected && p.facing == 0 && p.y == before.y && p.world == before.world,
+            "the world, inventory, readiness, last selection, facing and position survive restart");
+        require(w.cell(edge, edge) == Cell{"base:timber", 5, true}, "foreground batch state survives");
+        require(w.block(edge, edge, Layer::background) == "missing:wall", "missing background content retains its stable ID");
+        require(w.cell(edge + 1, edge + 1, Layer::background).batch == 10, "both layers survive eviction across vertical and horizontal chunk boundaries");
+        w.set(edge, edge, {}, Layer::background); w.save_changes(p);
+    });
+    reopen([&](World& w, Player&) {
+        require(w.block(edge, edge, Layer::background).empty() && w.cell(edge, edge).quantity == 5, "background removal persists without changing foreground state");
+    });
 }
 }
 
@@ -374,10 +409,12 @@ int main(int argc, char** argv) {
         auto root = std::filesystem::path(argv[1]);
         for (const auto& [id, version] : load_manifest(root / "flagship.json").packs) content.load(root / id);
         content.validate();
-        Settings settings; settings.seed = 42; settings.terrain = load_terrain(root / "expedition");
+        auto settings = small(root);
         {
-            Save save(scratch / "play"); save.write_settings(settings);
-            World w(save, content, settings);
+            Save save(scratch / "play");
+            auto folder = save.world(Save::starting_world);
+            folder.write_settings(settings);
+            World w(save, folder, content, settings);
             targets(w); boundary_placement(w); selection(); actions(w); forgiveness(w); belt(w); crafting(w); jump_building(w); rear_wall(w);
         }
         persist(scratch / "persist", content, settings);

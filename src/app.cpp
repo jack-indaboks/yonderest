@@ -13,6 +13,7 @@
 #include <numbers>
 #include <optional>
 #include <stdexcept>
+#include <tuple>
 
 using namespace yonder;
 namespace {
@@ -24,34 +25,53 @@ void sdl(bool result) {
 }
 
 struct Options {
-    std::filesystem::path save, content, manifest, screenshot;
+    std::string name;
+    std::filesystem::path path, content, manifest, screenshot;
     std::vector<std::filesystem::path> packs;
     std::optional<std::uint64_t> seed;
+    std::optional<std::pair<int, int>> size;
     int frames = 0;
-    bool keep_generation = false;
 };
+
+constexpr const char* default_save = "first";
+
+std::optional<int> power_of_two(const std::string& text, int most) {
+    std::size_t end = 0;
+    int n = 0;
+    try { n = std::stoi(text, &end); } catch (const std::exception&) { return std::nullopt; }
+    if (end != text.size() || n < 1 || n > most || (n & (n - 1))) return std::nullopt;
+    return n;
+}
 
 Options options(int argc, const char* const* argv) {
     Options o;
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
-        if (arg == "--help") {
-            std::cout << "Yonderest\n"
-                         "  --save DIR        World folder, created if new (default: SDL user data/yonderest/world)\n"
-                         "  --seed NUMBER     Seed for a NEW save only\n"
-                         "  --content DIR     Content root (manifest and packs)\n"
-                         "  --manifest FILE   Pack and terrain configuration\n"
-                         "  --keep-generation Keep this save's existing terrain profile\n"
-                         "  --pack DIR        Additional content pack (repeatable)\n"
-                         "  --frames NUMBER   Exit after this many frames (render checks)\n"
-                         "  --screenshot FILE Save the last frame as BMP\n"
+        if (arg == "-h" || arg == "--help") {
+            std::cout << "Usage: yonderest [options]\n"
+                         "  --save NAME        Open the save called NAME, or make it (default: " << default_save << ").\n"
+                         "                     Saves are kept in yonderest/saves in your user data folder.\n"
+                         "  --save-path DIR    Open or make a save in DIR instead\n"
+                         "  --size AROUNDxTALL A new save's world size, in chunks of 64 blocks (default: "
+                      << starting_columns << 'x' << starting_rows << ").\n"
+                         "                     Each is a power of two, up to " << max_columns << " around and " << max_rows << " tall.\n"
+                         "  --seed NUMBER      A new save's seed\n"
+                         "  --content DIR      Content root (manifest and packs)\n"
+                         "  --manifest FILE    Pack and terrain configuration\n"
+                         "  --pack DIR         Additional content pack (repeatable)\n"
+                         "  --frames NUMBER    Exit after this many frames (render checks)\n"
+                         "  --screenshot FILE  Save the last frame as BMP\n"
+                         "  -h, --help         Show this help\n"
                          "In game, Esc opens the menu and its Controls page.\n";
             std::exit(0);
         }
-        if (arg == "--keep-generation") { o.keep_generation = true; continue; }
         if (i + 1 == argc) throw std::runtime_error("Missing value for " + arg);
         std::string value = argv[++i];
-        if (arg == "--save") o.save = value;
+        if (arg == "--save") {
+            if (value.empty() || value == "." || value == ".." || value.find('/') != std::string::npos)
+                throw std::runtime_error("--save takes a name; use --save-path for a folder: " + value);
+            o.name = value;
+        } else if (arg == "--save-path") o.path = value;
         else if (arg == "--content") o.content = value;
         else if (arg == "--manifest") o.manifest = value;
         else if (arg == "--pack") o.packs.emplace_back(value);
@@ -60,12 +80,21 @@ Options options(int argc, const char* const* argv) {
             std::size_t end;
             o.seed = std::stoull(value, &end);
             if (end != value.size() || value.starts_with('-')) throw std::runtime_error("Invalid seed");
+        } else if (arg == "--size") {
+            auto x = value.find('x');
+            auto around = x == std::string::npos ? std::nullopt : power_of_two(value.substr(0, x), max_columns);
+            auto tall = x == std::string::npos ? std::nullopt : power_of_two(value.substr(x + 1), max_rows);
+            if (!around || !tall)
+                throw std::runtime_error("--size takes AROUNDxTALL in chunks, each a power of two up to "
+                                         + std::to_string(max_columns) + "x" + std::to_string(max_rows) + ": " + value);
+            o.size = {*around, *tall};
         } else if (arg == "--frames") {
             std::size_t end;
             o.frames = std::stoi(value, &end);
             if (end != value.size() || o.frames <= 0) throw std::runtime_error("Invalid frame count");
         } else throw std::runtime_error("Unknown option: " + arg);
     }
+    if (!o.name.empty() && !o.path.empty()) throw std::runtime_error("Give --save or --save-path, not both");
     return o;
 }
 
@@ -134,7 +163,8 @@ public:
 
     View() {
         sdl(SDL_Init(SDL_INIT_VIDEO));
-        sdl(SDL_CreateWindowAndRenderer("Yonderest", 1280, 720, SDL_WINDOW_RESIZABLE, &window, &renderer));
+        // Shown once the land around the player is in place and play begins.
+        sdl(SDL_CreateWindowAndRenderer("Yonderest", 1280, 720, SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN, &window, &renderer));
         sdl(SDL_SetRenderLogicalPresentation(renderer, screen_width, screen_height, SDL_LOGICAL_PRESENTATION_INTEGER_SCALE));
         sdl(SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND));
         SDL_SetRenderVSync(renderer, 1);
@@ -249,9 +279,8 @@ public:
         camera_x = int(std::lround((p.x + player_width / 2) * tile)) - screen_width / 2;
         int y = int(std::lround((p.y + player_height) * tile)) - screen_height * 3 / 5;
         camera_y = std::clamp(y, -2 * tile, world.settings.height() * tile - screen_height);
-        // A small view margin, not full-height columns.
         int left = int(std::floor(camera_x / double(tile))), top = int(std::floor(camera_y / double(tile)));
-        world.retain(left - 6, top - 1, left + screen_width / tile + 6, top + screen_height / tile + 2);
+        world.retain(left, top, left + screen_width / tile + 1, top + screen_height / tile + 1);
     }
 
     struct Transformation { Crafted made; double start; };
@@ -259,18 +288,23 @@ public:
     void scene(World& world, const Player& p, const Hands& hands, const char* pose, bool swinging,
                const std::vector<Transformation>& crafts, double now) {
         // Open sky above ground; depth darkens the backdrop rather than inventing scenery.
-        double daylight = 1 - std::clamp((p.y - surface(world.settings, int(p.x))) / 12.0, 0.0, 1.0);
+        double daylight = 1 - std::clamp((p.y - world.ground(int(p.x))) / 12.0, 0.0, 1.0);
         for (int y = 0; y < screen_height; y += 4)
             fill({0, y, screen_width, 4}, {Uint8((96 + y / 6) * daylight + 10), Uint8((150 + y / 6) * daylight + 10), Uint8((196 + y / 10) * daylight + 18)});
         if (daylight > 0.8) {
             fill({476, 50, 20, 16}, {255, 236, 178}); fill({478, 48, 16, 20}, {255, 236, 178});
         }
+        // The ridges keep their place above the world's ground level, wherever in the height it lies:
+        // `level` is the camera standing there.
+        int level = world.settings.height() / 4 * tile - screen_height * 3 / 5;
         for (int layer = 0; layer < 3; ++layer) {
             Color c{Uint8((92 - layer * 14) * daylight + 8), Uint8((140 - layer * 16) * daylight + 10), Uint8((150 - layer * 14) * daylight + 18)};
             for (int sx = 0; sx < screen_width; sx += 4) {
-                double angle = (camera_x / double(tile) + sx / double(tile)) * (2 * std::numbers::pi / world.settings.width());
-                int ridge = int(150 + layer * 30 + 20 * std::sin(angle * (5 + layer * 2) + layer)
-                                + 9 * std::sin(angle * 17) - camera_y * 0.05);
+                // Ridges a few hundred blocks apart, a whole number of them around the world.
+                double around = std::max(1.0, std::round(world.settings.width() / 2048.0));
+                double angle = (camera_x / double(tile) + sx / double(tile)) * (2 * std::numbers::pi * around / world.settings.width());
+                int ridge = int(72 + layer * 30 + 20 * std::sin(angle * (5 + layer * 2) + layer)
+                                + 9 * std::sin(angle * 17) - (camera_y - level) * 0.05);
                 fill({sx, ridge, 4, screen_height - ridge}, c);
             }
         }
@@ -280,6 +314,11 @@ public:
                 for (int y = top; y <= top + screen_height / tile + 1; ++y) {
                     const auto& cell = world.cell(x, y, layer);
                     int sx = x * tile - camera_x, sy = y * tile - camera_y, wx = wrap(x, world.settings.width());
+                    // Land that has not arrived yet is shown for what it is, not as open air.
+                    if (!world.ready(x, y)) {
+                        if (layer == Layer::foreground) fill({sx, sy, tile, tile}, {18, 16, 26});
+                        continue;
+                    }
                     if (layer == Layer::foreground && transform(world, crafts, now, wx, y, sx, sy)) continue;
                     if (cell.id.empty()) continue;
                     const auto& m = world.content.material(cell.id);
@@ -666,11 +705,16 @@ private:
 int run_game(Options o) {
     View view;
     if (o.content.empty()) o.content = std::filesystem::path(SDL_GetBasePath()) / "content";
-    if (o.save.empty()) {
+    if (o.path.empty()) {
         char* path = SDL_GetPrefPath(nullptr, "yonderest");
         if (!path) throw std::runtime_error(SDL_GetError());
-        o.save = std::filesystem::path(path) / "world";
+        std::filesystem::path data(path);
         SDL_free(path);
+        o.path = data / "saves" / (o.name.empty() ? default_save : o.name);
+        // Until 0.0.7 the one world lived beside the saves, where 0.0.6 can still open it.
+        if (!std::filesystem::exists(o.path) && std::filesystem::exists(data / "world" / "world.json"))
+            std::cout << "The world in " << (data / "world").string() << " is from Yonderest 0.0.6 or earlier"
+                         " and stays there; this version starts a new save.\n";
     }
     Content content;
     auto manifest = load_manifest(o.manifest.empty() ? o.content / "flagship.json" : o.manifest);
@@ -686,30 +730,27 @@ int run_game(Options o) {
     for (const auto& r : content.recipes) book.push_back(&r);
     std::ranges::sort(book, {}, &Recipe::order);
 
-    auto terrain = load_terrain(o.content / manifest.terrain);
-    Save save(o.save);
-    auto saved_settings = save.settings();
+    Save save(o.path);
+    auto saved_player = save.player();
+    auto folder = save.world(saved_player ? saved_player->world : Save::starting_world);
+    auto saved_settings = folder.settings();
     Settings settings;
     if (saved_settings) {
         settings = *saved_settings;
-        if (!o.keep_generation && profile_rank(terrain.version) > profile_rank(settings.terrain.version)) {
-            settings.terrain.version = terrain.version;
-            settings.terrain.clay = terrain.clay;
-            settings.terrain.ore = terrain.ore;
-            std::cout << "New territory: " << terrain.version << "; saved chunks stay unchanged.\n";
-            save.write_settings(settings);
-        }
         if (o.seed && *o.seed != settings.seed) std::cout << "Existing save: using its seed, not --seed.\n";
+        if (o.size) std::cout << "Existing save: keeping its size, not --size.\n";
     } else {
+        if (saved_player) throw std::runtime_error("The player is in " + folder.folder.string() + ", which has no world.json");
         settings.seed = o.seed.value_or(std::uint64_t(std::chrono::system_clock::now().time_since_epoch().count()));
-        settings.terrain = terrain;
-        if (o.keep_generation) settings.terrain.version = "shelter-v1";
-        save.write_settings(settings);
+        if (o.size) std::tie(settings.columns, settings.rows) = *o.size;
+        settings.terrain = load_terrain(o.content / manifest.terrain);
+        folder.write_settings(settings);
     }
-    World world(save, content, settings);
-    auto saved_player = save.player();
+    World world(save, folder, content, settings);
     Player player = saved_player ? *saved_player : spawn(world);
-    std::cout << "World: " << o.save << "\nSeed: " << settings.seed << '\n';
+    player.world = folder.folder.filename().string();
+    std::cout << "Save: " << o.path.string() << "\nWorld: " << player.world << ", " << settings.columns << " chunks around and "
+              << settings.rows << " tall\nSeed: " << settings.seed << '\n';
 
     Hands hands;
     int side = player.facing ? player.facing : 1; // The side last faced, for S from the rear wall.
@@ -770,7 +811,11 @@ int run_game(Options o) {
         if (!book.empty()) recipe_index = wrap(recipe_index + change, int(book.size()));
     };
 
+    // Play starts with the land around the player in place.
+    world.load(int(player.x) - screen_width / tile, int(player.y) - screen_height / tile,
+               int(player.x) + screen_width / tile, int(player.y) + screen_height / tile);
     view.follow(player, world);
+    sdl(SDL_ShowWindow(view.window));
     while (!quit) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
@@ -962,6 +1007,8 @@ int run_game(Options o) {
         SDL_Delay(1);
     }
     world.save_changes(player);
+    save.worker.wait();
+    save.worker.check();
     return 0;
 }
 

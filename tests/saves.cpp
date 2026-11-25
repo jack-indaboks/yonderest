@@ -1,5 +1,7 @@
 #include "save.hpp"
 
+#include <algorithm>
+#include <climits>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -30,10 +32,12 @@ std::string replaced(std::string text, const std::string& from, const std::strin
     return text.replace(at, from.size(), to);
 }
 
-// Everything a save holds survives writing and reading, including values JSON tools often mangle.
+// A save is a universe: the player at the top, each world in its own folder, chunks by region.
+// Everything it holds survives writing and reading, including values JSON tools often mangle.
 void round_trip(const std::filesystem::path& folder, Settings settings) {
     settings.seed = 9007199254740993ULL; // 2^53 + 1: a double would round it.
     Player before;
+    before.world = Save::starting_world;
     before.x = 305.21666666685525; before.y = 115;
     before.facing = 0;
     before.inventory = {{"base:soil", 7}, {"workshop:pick", 1}, {"missing:crystal", 3}};
@@ -42,29 +46,41 @@ void round_trip(const std::filesystem::path& folder, Settings settings) {
     Content content;
     {
         Save save(folder);
-        save.write_settings(settings);
-        World world(save, content, settings);
+        auto world_folder = save.world(Save::starting_world);
+        world_folder.write_settings(settings);
+        World world(save, world_folder, content, settings);
+        world.load(40, 100, 41, 100);
         world.put(40, 100, Cell{"base:timber", 5, true});
         world.put(41, 100, Cell{"workshop:workbench", 1, true, 10});
         world.put(40, 100, Cell{"missing:wall", 1, true}, Layer::background);
         require(world.save_changes(before), "a first save writes");
         require(!world.save_changes(before), "nothing is written when nothing changed");
     }
+    require(std::filesystem::exists(folder / "player.json") && std::filesystem::exists(folder / "origin" / "world.json")
+                && std::filesystem::exists(folder / "origin" / "regions" / "x0-y0" / "x0-y1.json"),
+            "the player sits in the universe, the world in its folder, a chunk in its region's folder");
     Save save(folder);
-    auto s = *save.settings();
+    auto p = *save.player();
+    auto world_folder = save.world(p.world);
+    auto s = *world_folder.settings();
     require(s.seed == settings.seed && s.columns == settings.columns && s.rows == settings.rows
                 && s.terrain.version == settings.terrain.version && s.terrain.ore == settings.terrain.ore,
             "world settings survive, the seed exactly");
-    auto p = *save.player();
-    require(p.x == before.x && p.y == before.y && p.facing == 0 && p.inventory == before.inventory
+    require(p.world == before.world && p.x == before.x && p.y == before.y && p.facing == 0 && p.inventory == before.inventory
                 && p.selected == before.selected && p.last_selected == before.last_selected && p.ready == before.ready,
-            "the player survives exactly, missing content's identity included");
-    World world(save, content, s);
+            "the player survives exactly, their world and missing content's identity included");
+    World world(save, world_folder, content, s);
+    world.load(40, 100, 41, 100);
     require(world.cell(40, 100) == Cell{"base:timber", 5, true} && world.cell(41, 100).batch == 10
                 && world.cell(40, 100, Layer::background) == Cell{"missing:wall", 1, true},
             "both layers keep unfinished quantities, placement, batch settings and unknown IDs");
-    require(save.chunk(1, 3).has_value() && !save.chunk(9, 3).has_value(),
+    require(world_folder.chunk(0, 1).has_value() && !world_folder.chunk(5, 1).has_value(),
             "a visited chunk is saved; an unvisited one is not, and stays ungenerated");
+    auto far = world_folder;
+    Chunk c;
+    c.ground.assign(chunk_size, 70);
+    far.write_chunk(region_size + 1, 2, c);
+    require(std::filesystem::exists(folder / "origin" / "regions" / "x1-y0" / "x65-y2.json"), "chunk files gather by region");
 }
 
 // What a person editing the files meets: absence, unfamiliar additions, a changed block.
@@ -72,13 +88,16 @@ void editing(const std::filesystem::path& folder, const Settings& settings) {
     Content content;
     {
         Save save(folder);
-        save.write_settings(settings);
-        World world(save, content, settings);
+        save.world(Save::starting_world).write_settings(settings);
+        auto world_folder = save.world(Save::starting_world);
+        World world(save, world_folder, content, settings);
+        world.load(40, 40, 41, 40);
         world.put(40, 40, Cell{"base:timber", 1, true}); // open sky
         Player p; p.x = 40; p.y = 39; p.inventory["base:soil"] = 2;
         world.save_changes(p);
     }
-    auto chunk = folder / "chunks" / "x1-y1.json";
+    auto chunk = folder / "origin" / "regions" / "x0-y0" / "x0-y0.json";
+    auto world_file = folder / "origin" / "world.json";
     auto text = read(chunk);
     require(text.find("\"background\"") == std::string::npos, "an empty layer is simply absent");
     require(text.find("{\"block\": \"base:timber\", \"placed\": true}") != std::string::npos, "a palette entry names its block and only what differs");
@@ -86,28 +105,32 @@ void editing(const std::filesystem::path& folder, const Settings& settings) {
     write(chunk, replaced(replaced(text, "{\"block\": \"base:timber\", \"placed\": true}",
                                    "{\"block\": \"base:stone\", \"placed\": true, \"moss\": 3}"),
                           "\"generation\"", "\"weather\": {\"rain\": true},\n  \"generation\""));
-    write(folder / "world.json", replaced(replaced(read(folder / "world.json"), "\"seed\"", "\"lighting\": \"soft\", \"seed\""),
+    write(world_file, replaced(replaced(read(world_file), "\"seed\"", "\"lighting\": \"soft\", \"seed\""),
                                           "\"grass\"", "\"ice\": \"base:stone\", \"grass\""));
     // A minimal player: everything optional is absent.
     write(folder / "player.json", "{\"x\": 40, \"y\": 39, \"inventory\": {\"base:soil\": 2, \"base:sand\": 0}, \"mood\": \"glad\"}");
-    auto world_text = read(folder / "world.json");
+    auto world_text = read(world_file);
     auto edited_chunk = read(chunk);
     {
         Save save(folder);
-        World world(save, content, *save.settings());
         auto p = *save.player();
+        auto world_folder = save.world(p.world);
+        World world(save, world_folder, content, *world_folder.settings());
+        world.load(40, 40, 41, 40);
         require(world.cell(40, 40).id == "base:stone" && world.cell(40, 40).placed, "a hand-edited block loads as edited");
         require(world.block(40, 40, Layer::background).empty(), "absent background means empty background");
         require(p.facing == 1 && p.selected.empty() && p.ready.empty() && p.inventory == std::map<Block, std::int64_t>{{"base:soil", 2}},
                 "absent facing, hand and readiness take their defaults; an emptied entry is not carried");
         require(!world.save_changes(p), "loading writes nothing back: no migration, no version to advance");
     }
-    require(read(folder / "world.json") == world_text && read(chunk) == edited_chunk, "unchanged files stay byte for byte as edited");
+    require(read(world_file) == world_text && read(chunk) == edited_chunk, "unchanged files stay byte for byte as edited");
     // Rewrite every file: a changed chunk, a moved player, the world settings.
     auto rewrite = [&](double step) {
         Save save(folder);
-        save.write_settings(*save.settings());
-        World world(save, content, *save.settings());
+        auto world_folder = save.world(Save::starting_world);
+        world_folder.write_settings(*world_folder.settings());
+        World world(save, world_folder, content, *world_folder.settings());
+        world.load(40, 40, 41, 40);
         auto p = *save.player();
         p.x += step;
         world.set(41, 40, step > 0 ? "base:sand" : "base:soil");
@@ -119,13 +142,13 @@ void editing(const std::filesystem::path& folder, const Settings& settings) {
     };
     kept(chunk, "{\"block\": \"base:stone\", \"placed\": true, \"moss\": 3}");
     kept(chunk, "\"weather\": {\"rain\": true}");
-    kept(folder / "world.json", "\"lighting\": \"soft\"");
-    kept(folder / "world.json", "\"ice\": \"base:stone\"");
+    kept(world_file, "\"lighting\": \"soft\"");
+    kept(world_file, "\"ice\": \"base:stone\"");
     kept(folder / "player.json", "\"mood\": \"glad\"");
-    auto first = read(chunk) + read(folder / "world.json") + read(folder / "player.json");
+    auto first = read(chunk) + read(world_file) + read(folder / "player.json");
     rewrite(-1);
     rewrite(1);
-    require(read(chunk) + read(folder / "world.json") + read(folder / "player.json") == first,
+    require(read(chunk) + read(world_file) + read(folder / "player.json") == first,
             "kept properties settle: rewriting the same state again gives the same files");
     {
         Save save(folder);
@@ -135,118 +158,114 @@ void editing(const std::filesystem::path& folder, const Settings& settings) {
     }
     write(chunk, replaced(read(chunk), "\"foreground\": [", "\"foreground\": [[0],"));
     bool rejected = false;
-    try { Save save(folder); save.chunk(1, 1); } catch (const std::runtime_error& error) {
-        rejected = std::string(error.what()).find("x1-y1.json") != std::string::npos;
+    try { Save save(folder); save.world(Save::starting_world).chunk(0, 0); } catch (const std::runtime_error& error) {
+        rejected = std::string(error.what()).find("x0-y0.json") != std::string::npos;
     }
     require(rejected, "a damaged chunk is refused by name, never regenerated");
 }
 
-// From expedition-v3 a new tree's trunk stands in the background; saved trees keep theirs.
-void trunks(const std::filesystem::path& folder, Settings v3) {
-    auto v2 = v3;
-    v2.terrain.version = "expedition-v2";
-    Content content;
-    // Trees in two different chunk columns.
-    std::vector<int> trees;
+// Earlier worlds are refused by name, never misread.
+void retired(const std::filesystem::path& folder) {
+    std::filesystem::create_directories(folder / "chunks");
+    write(folder / "world.json", "{\"seed\": 1, \"columns\": 32, \"rows\": 8, \"chunk_size\": 32}");
+    auto refusal = [](const std::filesystem::path& f) {
+        try { Save save(f); } catch (const std::runtime_error& error) { return std::string(error.what()); }
+        return std::string();
+    };
+    require(refusal(folder).find("0.0.6 or earlier") != std::string::npos, "a world from 0.0.6 is refused, saying so");
+    require(std::filesystem::exists(folder / "world.json") && !std::filesystem::exists(folder / "player.json"), "and left as it was");
+    std::filesystem::create_directories(folder.parent_path() / "universe");
     {
-        Chunk probe;
-        for (int x = 0; x < v2.width() && trees.size() < 2; ++x) {
-            int y = surface(v2, x) - 1;
-            probe = generate(v2, x / chunk_size, y / chunk_size);
-            if (probe.at(x % chunk_size, y % chunk_size).id == v2.terrain.timber
-                && (trees.empty() || trees[0] / chunk_size != x / chunk_size)) trees.push_back(x);
+        Save save(folder.parent_path() / "universe");
+        save.world(Save::starting_world).write_settings(Settings{});
+    }
+    require(refusal(folder.parent_path() / "universe" / "origin").find("open the save that holds it") != std::string::npos,
+            "a world folder inside a save is not taken for a save");
+}
+
+// Unchanged generation gives the same land whatever order it is explored in, and each chunk keeps its ground line.
+void order(const std::filesystem::path& folder, const Settings& settings) {
+    Content content;
+    auto explore = [&](const std::string& name, std::vector<int> columns) {
+        Save save(folder / name);
+        auto world_folder = save.world(Save::starting_world);
+        world_folder.write_settings(settings);
+        World world(save, world_folder, content, settings);
+        for (int cx : columns) world.load(cx * chunk_size, 64, cx * chunk_size, 127);
+        world.save_changes({});
+    };
+    explore("east", {6, 7, 0, 1});
+    explore("west", {1, 0, 7, 6});
+    for (int cx : {6, 7, 0, 1})
+        for (int cy : {1}) {
+            auto name = std::filesystem::path("origin") / "regions" / "x0-y0" / ("x" + std::to_string(cx) + "-y" + std::to_string(cy) + ".json");
+            require(read(folder / "east" / name) == read(folder / "west" / name), "exploration order does not change the land");
+        }
+    auto c = *Save(folder / "east").world(Save::starting_world).chunk(0, 1);
+    for (int lx = 0; lx < chunk_size; ++lx) require(c.ground[lx] == ground(settings, lx), "a chunk keeps the ground line it was generated with");
+}
+
+// A chunk nobody generated, with its ground lower than the generator's and made of a material the
+// generator never uses, is met by the land generated around it, within a chunk or two, beside it,
+// across the wrap point, above and below.
+void handmade(const std::filesystem::path& folder, const Settings& settings) {
+    Content content;
+    constexpr int floor = 110; // The hand-built ground; the generator's lies around 64 in this world.
+    Save save(folder);
+    auto world_folder = save.world(Save::starting_world);
+    world_folder.write_settings(settings);
+    {
+        Chunk built;
+        for (int ly = floor - chunk_size; ly < chunk_size; ++ly)
+            for (int lx = 0; lx < chunk_size; ++lx) built.at(lx, ly) = Cell{"handmade:marble"};
+        world_folder.write_chunk(0, 1, built);
+    }
+    World world(save, world_folder, content, settings);
+    auto chunk = [&](int cx, int cy) {
+        world.load(cx * chunk_size, cy * chunk_size, cx * chunk_size, cy * chunk_size);
+        world.save_changes({});
+        save.worker.wait();
+        return *world_folder.chunk(wrap(cx, settings.columns), cy);
+    };
+    auto east = chunk(1, 1), farther = chunk(2, 1), west = chunk(-1, 1), above = chunk(0, 0), below = chunk(0, 2);
+    require(std::abs(east.ground[0] - floor) <= 2 && std::abs(west.ground[chunk_size - 1] - floor) <= 2,
+            "the land beside it meets its ground, across the wrap point too");
+    require(east.ground[chunk_size - 1] != ground(settings, 2 * chunk_size - 1) || floor == ground(settings, 2 * chunk_size - 1),
+            "fixture: the difference has not gone in one chunk");
+    require(farther.ground[chunk_size - 1] == ground(settings, 3 * chunk_size - 1), "within two chunks it is the generator's own ground");
+    require(std::ranges::all_of(above.ground, [](int g) { return g == floor; }) && std::ranges::all_of(below.ground, [](int g) { return g == floor; }),
+            "above and below it the ground line is its own");
+    auto marble = [](const Chunk& c, int from, int to) {
+        int n = 0;
+        for (int ly = 0; ly < chunk_size; ++ly)
+            for (int lx = from; lx < to; ++lx) n += c.at(lx, ly).id == "handmade:marble";
+        return n;
+    };
+    require(marble(east, 0, 8) > marble(east, 56, 64) && marble(east, 0, 8) > 0, "its material carries into the land beside it, fading");
+    require(marble(farther, 32, 64) == 0, "and is gone two chunks away");
+    require(marble(below, 0, chunk_size) > 0, "it carries downward too");
+    for (int ly = 0; ly < chunk_size; ++ly)
+        for (int lx = 0; lx < chunk_size; ++lx)
+            require(east.at(lx, ly).id != "handmade:marble" || chunk_size + ly >= east.ground[lx], "it stays below the ground");
+}
+
+// Underground, the rear layer holds deposits of its own, a little richer than the foreground's.
+void deposits(const Settings& settings) {
+    Content content;
+    int front = 0, rear = 0, hidden = 0;
+    // Chunks spread around the whole world, so the sample crosses uplands and groves.
+    for (int cx = 0; cx < settings.columns; cx += 16) {
+        auto c = generate(settings, content, cx, 4);
+        for (int i = 0; i < chunk_area; ++i) {
+            const auto &f = c.tiles[i].id, &b = c.background[i].id;
+            auto found = [&](const Block& id) { return id == settings.terrain.ore || id == settings.terrain.clay; };
+            front += found(f);
+            rear += found(b);
+            hidden += found(b) && f == settings.terrain.stone;
         }
     }
-    require(trees.size() == 2, "fixture: two trees in different chunks");
-    int old_tree = trees[0], new_tree = trees[1];
-    {
-        Save save(folder);
-        save.write_settings(v2);
-        World world(save, content, v2);
-        world.block(old_tree, surface(v2, old_tree) - 1);
-        world.save_changes({});
-    }
-    Save save(folder);
-    save.write_settings(v3);
-    World world(save, content, v3);
-    int th = surface(v3, old_tree);
-    require(world.block(old_tree, th - 1) == v3.terrain.timber && world.block(old_tree, th - 1, Layer::background).empty(),
-            "a saved tree keeps its trunk in front");
-    th = surface(v3, new_tree);
-    for (int y = th - 4; y < th; ++y)
-        require(world.block(new_tree, y, Layer::background) == v3.terrain.timber, "a new trunk stands behind");
-    require(world.block(new_tree, th - 1).empty() && world.block(new_tree, th - 2).empty(), "the character can walk past a new trunk");
-    require(world.block(new_tree, th - 3) == v3.terrain.leaves && world.block(new_tree, th - 4) == v3.terrain.leaves,
-            "the canopy stays in front of the trunk's top");
-}
-
-// Natural backing in new territory; explored territory keeps its empty background.
-void backing(const std::filesystem::path& folder, Settings v1, const Settings& v3) {
-    v1.terrain.version = "expedition-v1";
-    int x = 40, h = surface(v1, x);
-    Content content;
-    {
-        Save save(folder);
-        save.write_settings(v1);
-        World world(save, content, v1);
-        world.block(x, h + 3);
-        world.put(x, h - 1, Cell{"base:timber", 1, true}, Layer::background); // an old rear wall
-        world.save_changes({});
-    }
-    int far = 20 * chunk_size + 7, far_h = surface(v3, far);
-    {
-        Save save(folder);
-        save.write_settings(v3);
-        World world(save, content, v3);
-        require(world.block(x, h + 3, Layer::background).empty() && world.block(x, h - 1, Layer::background) == "base:timber",
-                "explored territory keeps its empty and built background cells");
-        require(world.block(far, far_h - 1, Layer::background).empty() || world.block(far, far_h - 1, Layer::background) == v3.terrain.timber,
-                "open sky above new ground, unless a trunk stands there");
-        require(!world.block(far, far_h + 3, Layer::background).empty(), "new territory has natural backing underground");
-        require(world.block(far, far_h + 3, Layer::background) == world.block(far, far_h + 3), "backing matches its foreground host material");
-        Player p; p.x = far; p.y = far_h - 1;
-        auto host = world.block(far, far_h + 3);
-        require(gather(world, p, far, far_h + 3).ok && gather(world, p, far, far_h + 3, Layer::background).ok,
-                "foreground, then exposed backing, can be gathered");
-        require(p.inventory.at(host) == 2, "both layers are actual recoverable material");
-        world.save_changes(p);
-    }
-    Save save(folder);
-    World world(save, content, *save.settings());
-    require(world.block(far, far_h + 3).empty() && world.block(far, far_h + 3, Layer::background).empty(),
-            "the opening stays empty after restart; no further layer is generated behind it");
-}
-
-// Old territory sets boundary conditions only for the new chunks that touch it.
-void boundaries(const std::filesystem::path& folder, const Settings& old, const Settings& updated) {
-    Content content;
-    {
-        Save save(folder);
-        save.write_settings(old);
-        World world(save, content, old);
-        for (int cx : {0, 1}) world.block(cx * chunk_size, 3 * chunk_size);
-        world.save_changes({});
-    }
-    std::vector<std::uint8_t> next;
-    {
-        Save save(folder);
-        save.write_settings(updated);
-        World world(save, content, updated);
-        world.block(2 * chunk_size, 3 * chunk_size);
-        world.block(3 * chunk_size, 3 * chunk_size);
-        world.block(6 * chunk_size, 3 * chunk_size);
-        world.save_changes({});
-        auto touching = save.chunk(2, 3)->settling;
-        require(touching.size() == chunk_size * chunk_size, "a chunk touching old territory carries a transition");
-        require(touching[16 * chunk_size] <= 1 && touching[16 * chunk_size + 31] >= 31 && touching[16 * chunk_size + 31] <= 33,
-                "settling grows with distance from the old edge");
-        next = save.chunk(3, 3)->settling;
-        require(next.size() == chunk_size * chunk_size && next[16 * chunk_size] >= 32 && next[16 * chunk_size] <= 34,
-                "the following chunk continues from its neighbor's edge, not from a global scan");
-        require(save.chunk(6, 3)->settling.empty(), "a chunk with no transitional neighbors is fully settled");
-    }
-    Save save(folder);
-    require(save.chunk(3, 3)->settling == next, "settling persists with the chunk");
+    require(rear > front && front > 0, "the rear layer is a little richer than the foreground");
+    require(hidden > rear / 4, "much of it is hidden behind ordinary stone");
 }
 
 }
@@ -256,16 +275,20 @@ int main(int argc, char** argv) {
     try {
         require(argc == 2, "expected content root");
         std::filesystem::create_directories(scratch);
-        Settings old, updated;
-        old.seed = updated.seed = 42;
-        old.terrain = load_terrain(std::filesystem::path(argv[1]) / "base");
-        updated.terrain = load_terrain(std::filesystem::path(argv[1]) / "expedition");
-        require(updated.terrain.version == "expedition-v3", "the flagship expedition terrain puts trunks behind");
-        round_trip(scratch / "round-trip", updated);
-        editing(scratch / "editing", updated);
-        trunks(scratch / "trunks", updated);
-        backing(scratch / "backing", updated, updated);
-        boundaries(scratch / "boundaries", old, updated);
+        // A small world: eight chunks around and four tall.
+        Settings small;
+        small.seed = 42; small.columns = 8; small.rows = 4;
+        small.terrain = load_terrain(std::filesystem::path(argv[1]) / "expedition");
+        round_trip(scratch / "round-trip", small);
+        auto tall = small;
+        tall.rows = 8; // Its first row of chunks is open sky.
+        editing(scratch / "editing", tall);
+        retired(scratch / "old" / "world");
+        order(scratch / "order", small);
+        handmade(scratch / "handmade", small);
+        auto starting = small;
+        starting.columns = starting_columns; starting.rows = starting_rows;
+        deposits(starting);
         std::filesystem::remove_all(scratch);
         return 0;
     } catch (const std::exception& error) {

@@ -2,6 +2,19 @@
 
 What changed in each tagged version of Yonderest, newest first. What is planned next is in [ROADMAP.md](ROADMAP.md).
 
+## 0.0.7
+
+- Worlds from 0.0.6 and earlier no longer open. They stay where they were, and version 0.0.6 can still open them.
+- A new world is vast: 4,096 chunks around, over a quarter of a million blocks, and 1,024 blocks deep. Circling it takes hours.
+- Hills, climate and biomes have their own size, so the larger world holds more places rather than stretched ones. Hills rise higher than before.
+- Underground goes much deeper. Far down the caves open into larger caverns, and copper continues in veins beneath the uplands.
+- The rear layer underground holds deposits of its own, a little richer than the ones in front, found by mining.
+- New land is made, loaded and saved alongside play, ahead of you, so walking, sprinting or falling into new land never stalls the game, and neither does saving. The window opens once the land around you is ready.
+- A save is a folder in `yonderest/saves`, holding you and your world. Name one with `--save NAME`, or give a folder elsewhere with `--save-path DIR`. `--size AROUNDxTALL` sets a new world's size in chunks, and `-h` works like `--help`. `--keep-generation` is gone.
+- Chunks are 64 by 64 blocks in every world, and their files are gathered in a folder per region of 64 by 64 chunks. Each chunk records where the ground lay when it was made.
+- Land generated beside a chunk the generator did not make, such as one built by hand, rises or falls to meet it and takes on its materials, fading back to its own within a chunk or two.
+- In a jump, the target is one block up from the moment you leave the ground. While the body straddles two rows, J and L act on the other row if the one aimed at cannot take the action.
+
 ## 0.0.6 - 2026-11-21
 
 - Hold W to reach up: dig out the block above your head or place one there, standing or in a jump. While W is held, A and D shuffle sideways without turning. A tap of W still turns you toward the background.

@@ -4,13 +4,23 @@
 #include <cstdint>
 #include <filesystem>
 #include <map>
+#include <memory>
+#include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
 namespace yonder {
 
-constexpr int chunk_size = 32;
+// A chunk is the same in every world, so anything built to it, such as a hand-made chunk,
+// fits everywhere. A region of chunks groups their files.
+constexpr int chunk_size = 64;
+constexpr int chunk_area = chunk_size * chunk_size;
+constexpr int region_size = 64;
+// World sizes, in chunks.
+constexpr int max_columns = 65536, max_rows = region_size;
+constexpr int starting_columns = 4096, starting_rows = 16;
 constexpr double player_width = 0.7;
 constexpr double player_height = 1.0;
 constexpr double tick_seconds = 1.0 / 120;
@@ -91,10 +101,8 @@ struct Terrain {
     Unrecognized unknown, unknown_materials;
 };
 Terrain load_terrain(const std::filesystem::path& pack);
-// Known generation profiles in order: shelter-v1, expedition-v1, expedition-v2, expedition-v3.
-// Zero means unknown. Expedition profiles add regional materials; v2 adds natural backing;
-// v3 puts tree trunks in the background.
-int profile_rank(const std::string& profile);
+// The one generation this build makes.
+constexpr const char* this_generation = "expedition-1";
 
 struct Manifest {
     int version;
@@ -103,10 +111,11 @@ struct Manifest {
 };
 Manifest load_manifest(const std::filesystem::path& file);
 
+// A world's lasting parameters. Its size is whole chunks: columns around, rows tall.
 struct Settings {
     std::uint64_t seed = 0;
-    int columns = 32;
-    int rows = 8;
+    int columns = starting_columns;
+    int rows = starting_rows;
     Terrain terrain;
     Unrecognized unknown{};
     int width() const { return columns * chunk_size; }
@@ -116,7 +125,8 @@ struct Settings {
 int wrap(int x, int width);
 double wrap(double x, double width);
 double distance_x(double from, double to, int width);
-int surface(const Settings& settings, int x);
+// Where the generator puts the ground in column x, before any settling: the top row of ground.
+int ground(const Settings& settings, int x);
 
 struct Cell {
     Block id;
@@ -127,15 +137,19 @@ struct Cell {
     bool operator==(const Cell&) const = default;
 };
 
-// How far a cell has settled from an earlier generation's materials toward
-// this generation's ordinary result: 0 is the old material, settle_extent is
-// fully settled. It spans roughly two chunks.
-constexpr int settle_extent = 2 * chunk_size;
+// How far a cell has settled from what a neighbor carried in toward this generator's ordinary
+// result: 0 is the neighbor's own, settle_extent is fully settled. It spans a chunk and a half,
+// about as far as a difference in the ground takes to fade.
+constexpr int settle_extent = chunk_size * 3 / 2;
 
 struct Chunk {
-    std::array<Cell, chunk_size * chunk_size> tiles;
-    std::array<Cell, chunk_size * chunk_size> background;
-    std::string profile;
+    std::array<Cell, chunk_area> tiles;
+    std::array<Cell, chunk_area> background;
+    // What generated it. Empty means nothing did: a chunk built by hand.
+    std::string generation;
+    // Where the ground lay across each column when it was generated, as the top row of ground.
+    // Empty means it is read from the blocks.
+    std::vector<int> ground;
     // Empty means fully settled. Otherwise one value per cell, row-major.
     std::vector<std::uint8_t> settling;
     Unrecognized unknown{};
@@ -143,16 +157,23 @@ struct Chunk {
     Cell& at(int x, int y) { return tiles[y * chunk_size + x]; }
     const Cell& at(int x, int y) const { return tiles[y * chunk_size + x]; }
 };
-// A neighboring cell's settling, in the new chunk's local coordinates.
-struct Boundary {
-    int x, y, settled;
+
+// The chunks around one being generated that already exist, by offset; the centre is empty.
+struct Neighborhood {
+    std::array<std::array<std::shared_ptr<const Chunk>, 3>, 3> chunks;
+    const Chunk* at(int dx, int dy) const { return chunks[dy + 1][dx + 1].get(); }
 };
-// Boundary conditions come only from immediate neighbors that already exist.
-Chunk generate(const Settings& settings, int cx, int cy, const std::vector<Boundary>& boundary = {});
+// The highest and lowest the top row of ground can be in a chunk's column `lx`: one row where the
+// chunk carries its ground line, a range where it is read from natural blocks that may not show it.
+std::pair<int, int> ground_span(const Chunk& chunk, const Content& content, int cy, int lx);
+// A new chunk takes ground and materials only from immediate neighbors that already exist.
+Chunk generate(const Settings& settings, const Content& content, int cx, int cy, const Neighborhood& near = {});
 
 struct Player {
+    std::string world; // Which world of the universe the player is in.
     double x = 0, y = 0, vy = 0;
     bool grounded = false;
+    int takeoff = -1; // The row the body stood in when this jump began; -1 when not jumping.
     std::map<Block, std::int64_t> inventory;
     Block selected;
     Block last_selected;
@@ -173,31 +194,54 @@ struct Target {
 Target target(const Player& player);
 
 class Save;
+class WorldFolder;
 
-// World owns the loaded chunks. Save reads and writes their files.
+// World owns the loaded chunks, on the game's thread. Loading, generating and writing them
+// happen on the save's worker, ahead of the player, so the game never waits for them; a chunk
+// that has not arrived yet is solid and empty.
 class World {
 public:
-    World(Save& save, const Content& content, Settings settings);
+    World(Save& save, const WorldFolder& folder, const Content& content, Settings settings);
+    ~World();
+    World(const World&) = delete;
+    World& operator=(const World&) = delete;
     const Settings settings;
     const Content& content;
 
     // References belong to the loaded chunk and expire when retain unloads it.
     const Block& block(int x, int y, Layer layer = Layer::foreground);
     const Cell& cell(int x, int y, Layer layer = Layer::foreground);
+    bool ready(int x, int y);
     bool solid(int x, int y);
+    // Where the ground lay in column x when its loaded chunk was made, or the generator's
+    // ground if no chunk of that column is loaded.
+    int ground(int x);
     void set(int x, int y, const Block& block, Layer layer = Layer::foreground);
     void put(int x, int y, const Cell& cell, Layer layer = Layer::foreground);
-    // Unloads chunks outside this area, writing each changed one as it leaves.
+    // Asks for the chunks around this view, nearest first, takes in those that have arrived,
+    // and unloads those far outside it, writing each changed one as it leaves.
     void retain(int left, int top, int right, int bottom);
-    // Writes every changed chunk and a changed player. Returns whether anything was written.
+    // Loads every chunk overlapping this area and waits for them, for starting play.
+    void load(int left, int top, int right, int bottom);
+    // Writes every changed chunk and a changed player, behind play. Returns whether anything changed.
     bool save_changes(const Player& player);
 
 private:
+    using Key = std::pair<int, int>;
     Save& save;
-    std::map<std::pair<int, int>, Chunk> chunks;
-    Chunk& chunk(int x, int y);
-    Chunk* existing(int cx, int cy);
-    std::vector<Boundary> boundary(int cx, int cy);
+    const WorldFolder& folder;
+    std::map<Key, Chunk> chunks;
+    std::set<Key> requested;
+    // Arrivals from the worker.
+    std::mutex mutex;
+    std::vector<std::pair<Key, Chunk>> arrived;
+    // The worker's own copies of chunks it has handed over and not yet been told are gone,
+    // so a neighbor still in play can shape new land. Only the worker touches it.
+    std::map<Key, std::shared_ptr<const Chunk>> known;
+    Chunk* loaded(int x, int y);
+    void request(int cx, int cy);
+    void receive();
+    std::shared_ptr<const Chunk> neighbor(int cx, int cy);
 };
 
 bool intersects(World& world, double x, double y);
@@ -217,6 +261,9 @@ struct ActionResult {
     bool quiet = false; // Routine outcomes the world already shows.
     std::optional<Crafted> crafted{};
 };
+// In the air the body straddles two rows. When the target cannot take an action that needs it
+// occupied (or empty) and the other row the body overlaps can, that row is meant instead.
+Target favor(World& world, const Player& player, Target target, bool occupied);
 // What J addresses: anything sharing the body's own cell, before the target.
 Target reach(World& world, const Player& player);
 // Moves the body clear of a cell it overlaps by no more than the margin, as little as possible.

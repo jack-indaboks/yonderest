@@ -56,19 +56,23 @@ int main(int argc, char** argv) {
         {
             Settings settings;
             settings.seed = 42;
+            settings.columns = 8; settings.rows = 4;
             settings.terrain = load_terrain(std::filesystem::path(content) / "expedition");
             Content blocks;
             for (const auto& [id, version] : load_manifest(std::filesystem::path(content) / "flagship.json").packs)
                 blocks.load(std::filesystem::path(content) / id);
             Save fixture(save_path);
-            fixture.write_settings(settings);
-            World world(fixture, blocks, settings);
+            auto folder = fixture.world(Save::starting_world);
+            folder.write_settings(settings);
+            World world(fixture, folder, blocks, settings);
+            world.load(6, 23, 20, 31);
             for (int x = 6; x <= 20; ++x) {
                 for (int y = 23; y < 30; ++y) world.set(x, y, {});
                 for (int y : {30, 31}) world.set(x, y, "base:soil");
                 for (int y : {28, 29, 30}) world.set(x, y, "base:stone", Layer::background);
             }
             Player p;
+            p.world = Save::starting_world;
             if (reach) {
                 p.x = 10.15; p.y = 29; p.selected = "workshop:pick";
                 p.inventory["workshop:pick"] = 1;
@@ -206,7 +210,7 @@ int main(int argc, char** argv) {
             quit.type = SDL_EVENT_QUIT;
             SDL_PushEvent(&quit);
         });
-        std::vector<const char*> args{"desktop-test", "--content", content.c_str(), "--save", save.c_str()};
+        std::vector<const char*> args{"desktop-test", "--content", content.c_str(), "--save-path", save.c_str()};
         if (argc >= 4) { args.push_back("--screenshot"); args.push_back(argv[3]); }
         require(run(int(args.size()), args.data()) == 0, "desktop returned failure");
         input.join();
@@ -214,10 +218,11 @@ int main(int argc, char** argv) {
         {
             Save result(save_path);
             auto p = *result.player();
-            auto settings = *result.settings();
+            auto folder = result.world(p.world);
             Content blocks;
             blocks.load(std::filesystem::path(content) / "base");
-            World world(result, blocks, settings);
+            World world(result, folder, blocks, *folder.settings());
+            world.load(6, 23, 20, 31);
             if (reach) {
                 require(world.block(10, 28).empty() && world.block(11, 28).empty() && world.block(12, 28) == "base:stone",
                         "W held digs the cell above the head, standing and while shuffling");

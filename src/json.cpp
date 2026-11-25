@@ -210,24 +210,18 @@ void replace_file(const std::filesystem::path& file, const std::string& text) {
 }
 
 namespace {
-// Generation roles in their written order. Expedition generations add the last two.
+// Generation roles in their written order.
 constexpr std::pair<const char*, Block Terrain::*> roles[]{
     {"grass", &Terrain::grass}, {"soil", &Terrain::soil}, {"stone", &Terrain::stone}, {"sand", &Terrain::sand},
     {"timber", &Terrain::timber}, {"leaves", &Terrain::leaves}, {"clay", &Terrain::clay}, {"ore", &Terrain::ore}};
-constexpr int shelter_roles = 6;
 }
 
 Terrain read_terrain(const Field& field) {
     Terrain t;
     t.version = field["generation"].text();
-    int rank = profile_rank(t.version);
-    if (rank == 0) field["generation"].fail("is not a generation this build knows: " + t.version);
+    if (t.version != this_generation) field["generation"].fail("is not a generation this build makes: " + t.version);
     auto materials = field["materials"];
-    for (int i = 0; i < int(std::size(roles)); ++i) {
-        auto [name, role] = roles[i];
-        if (i < shelter_roles || rank >= profile_rank("expedition-v1")) t.*role = materials[name].text();
-        else t.*role = materials[name].text_or("");
-    }
+    for (auto [name, role] : roles) t.*role = materials[name].text();
     t.unknown = field.rest({"generation", "materials"});
     t.unknown_materials = materials.rest({"grass", "soil", "stone", "sand", "timber", "leaves", "clay", "ore"});
     return t;
@@ -235,8 +229,7 @@ Terrain read_terrain(const Field& field) {
 
 void write_terrain(JsonWriter& out, const Terrain& t) {
     out.object().key("generation").text(t.version).key("materials").object();
-    for (auto [name, role] : roles)
-        if (!(t.*role).empty()) out.key(name).text(t.*role);
+    for (auto [name, role] : roles) out.key(name).text(t.*role);
     out.rest(t.unknown_materials).close().rest(t.unknown).close();
 }
 

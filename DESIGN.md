@@ -136,7 +136,7 @@ Generation has three conceptual responsibilities:
 - Derive world-scale environmental fields, material families, and ecological conditions.
 - Produce concrete local terrain and content in chunks.
 
-These are responsibilities, not a requirement for three runtime subsystems. Environmental modeling primarily belongs to generation. Continuous simulation exists for ongoing gameplay behavior, not to keep every process that shaped the landscape running forever.
+These are responsibilities, not a requirement for three runtime subsystems. A world's generator module carries them; see Modules and extension. Environmental modeling primarily belongs to generation. Continuous simulation exists for ongoing gameplay behavior, not to keep every process that shaped the landscape running forever.
 
 Given the same seed and unchanged generation configuration, terrain is consistent regardless of exploration order, including across the horizontal seam.
 
@@ -200,23 +200,47 @@ Stations compose through physical layout. To batch a recipe that requires a forg
 
 ## Modules and extension
 
-Yonderest is a cohesive flagship game built on an extensible engine. Flagship-first determines which functionality is developed first, not a bias toward coupling or privileged first-party code. First-party content and community extensions use the same fundamental extension mechanisms.
+The flagship game is an engine and a curated collection of modules, not a single binary. The engine owns world state, persistence, the course of play and the interfaces through which modules attach; what the game is made of comes from modules. Flagship-first determines which functionality is developed first, not a bias toward coupling or privileged first-party code: first-party modules use exactly the mechanisms open to everyone else. A versioned flagship manifest names the modules that make up the standard game.
 
 Shared operations are implemented once and generalized where that serves the game's uses. Engine responsibilities, content, and presentation have clear ownership so additional features and other games can extend the system without untangling the flagship from its internals.
 
-The extension model has three tiers:
+### Native modules
 
-- **Declarative content packs:** Blocks, recipes, textures, sprites, and supported generation definitions without programming. Carried and stored objects participate in this content path as blocks, not as a separate item type.
-- **Standard Lua scripts:** Gameplay extensions through the public game-facing API.
-- **Native C++ extensions or custom builds:** Deeper changes and separate games beyond the scripting API.
+A native module is a shared library that attaches to the engine at a defined extension point through a narrow C interface. Any language that can speak that interface can build one. Each extension point owns its interface and its version, checked when a module loads. There is no universal binary interface for everything, and adding an extension point never breaks the existing ones. Desktop platforms load native modules at runtime; platforms that forbid loading code link the same interfaces in when the game is built, so modding there is more limited. Changes that no extension point reaches call for a custom build of the engine.
+
+Everything crossing the boundary is data and handles, never engine internals. References held by a module have defined lifetimes across chunk loading and unloading. A native module runs with the full rights of any program; installing one is a decision to trust its author.
+
+The engine is not the only thing that offers extension interfaces. Any module can offer its own, in whatever form suits it: a declarative format, a C interface, a scripting API. The Lua module offering a Lua API to scripts and a generator offering an interface to the mods that extend it are the same shape. A mod built on a module's interface depends on that module, and on the version of the interface it was made for.
+
+### Declarative content
+
+Content packs carry data without programming: blocks, recipes, textures, sprites, and the definitions that modules accept, such as biomes for a generator. Carried and stored objects participate in this content path as blocks, not as a separate item type. Each part of a pack belongs to whoever defines its format, the engine or a module, and the engine passes a module's parts to it without interpreting them.
 
 Declarative content is JSON, like saves. Its familiar syntax and tooling lower the entry cost for modders, including those coming from Minecraft. Sharing a notation does not require content definitions and saved state to have identical structures or inherit Minecraft's game model. Images remain image assets, and behavior remains code; JSON replaces neither. Art travels by convention, the same way for first-party packs and mods: a pack's images are found by name, and later packs override earlier ones.
 
-Lua and declarative content are the portable extension mechanisms. Dynamic native loading on mobile and a universal stable native ABI are not requirements.
+### Scripting
 
-Major features are separately selectable where practical. Players can decline a generation update without necessarily declining unrelated later content. Dependencies are explicit; arbitrary combinations are not promised compatible. A versioned flagship manifest defines the standard configuration.
+Scripting languages are native modules that host scripts. A Lua module embeds an interpreter and offers the game's extension points to scripts; it is expected first, not a privileged tier. Scripts are where most modding happens: a script is one file that runs wherever its host module exists, needs no compiler, and can be confined by its host. Platforms that cannot load native modules build the scripting module in, so scripts stay portable. Language bindings derive from the C interface definitions, including LuaLS annotations, rather than being maintained as parallel type systems. A binding preserves the distinctions data needs, such as JSON null against Lua nil and empty arrays against empty objects.
 
-Extensions can introduce distinct semantic actions rather than being forced to overload the base tool actions or placement. An "eat anything" mod could add a separately bound Eat action, for example. Primary use, interaction and placement are a base vocabulary, not a closed limit on all game verbs. The registration and binding interface remains to be designed.
+### The generator
+
+A generator is a native module that attaches at the generation extension point, the first extension point. Each world names one. It decides which factors that world's generation can consider at all, and it does the work: given a chunk's place, the world's parameters, its neighbors' boundary information and the add-on data addressed to it, it returns the chunk's two layers, its ground line and whatever data of its own the chunk keeps for later neighbors. Its result depends only on those inputs, and it runs alongside play.
+
+Generation mods take three forms:
+
+- **Add-ons** are declarative: new biomes and adjustments to existing parameters, each written for one particular generator in the format that generator offers. Most generation mods are add-ons.
+- **Patches** have logic of their own and extend a generator without replacing it, through whatever interface the generator offers for them, native or scripted.
+- **Generators** themselves. Writing one is a far larger undertaking than an add-on, but installing one is no different from installing any other native module, and a new world can use any generator installed. A later generator is likely to offer a scripting surface, which may be what most distinguishes it.
+
+A world can move to a different generator, whether the flagship's next one or any other installed. It keeps every chunk it has; the new generator makes only new territory, settling against chunks the previous one made. Each flagship release includes only its current generator, so a player who wants a world to continue with an older one keeps that module installed. Each chunk records which generator and which add-ons produced it.
+
+Installing or upgrading the game checks every world's generator. A world whose generator would be missing, or would no longer load because the engine has moved past its interface version, is caught then, and resolved there: by an updated build of the same generator, or by moving the world to another. It is not discovered on opening the world.
+
+### Selecting modules
+
+Major features are separately selectable where practical. Players can decline a generation add-on, or keep a world on an older generator, without declining unrelated later content. Dependencies are explicit; arbitrary combinations are not promised compatible.
+
+Extensions can introduce distinct semantic actions rather than being forced to overload the base tool actions or placement. An "eat anything" mod could add a separately bound Eat action, for example. Primary use, interaction and placement are a base vocabulary, not a closed limit on all game verbs.
 
 ### Missing content
 
@@ -224,23 +248,19 @@ Disabling a module does not erase its saved identifiers. For example, a block sa
 
 The provisional interpretation is a common dirt-like fallback with ordinary collision, mining, and gameplay behavior, drawn so that the missing identity is recognizable. That interpretation does not replace the saved identifier. Restoring the module restores the original interpretation wherever the content has not been changed. Deliberate player actions can modify or destroy it.
 
-**Open:** Module declaration and compatibility details, the supported generation extension surface, and the final appearance and behavior of unknown content.
+**Open:** Module declaration and compatibility details; which extension points follow the generator, and the shape of each interface; how actions are registered and bound; and the final appearance and behavior of unknown content.
 
 ## Runtime and presentation
 
-The stack is C++20, SDL3, CMake, and standard Lua. The game is platform-neutral: its code depends on no single operating system, and supporting a platform means adding a thin surface for it, not reworking the game. Linux, macOS, Windows, Android, and iOS are all intended.
+The engine is C++20 with SDL3 and CMake; the flagship's scripting module uses standard Lua. The game is platform-neutral: its code depends on no single operating system, and supporting a platform means adding a thin surface for it, not reworking the game. Linux, macOS, Windows, Android, and iOS are all intended.
 
 The build never downloads its own dependencies: everything it needs is installed on the machine or kept in the repository.
-
-C++ owns world state and API contracts. Lua runs gameplay scripts against a public interface rather than accessing engine internals directly. Script-visible references need defined lifetimes across chunk loading and unloading. LuaLS annotations describe the API; where practical they are generated from its binding definitions rather than maintained as a parallel type system.
-
-C++ handles JSON input and output and can expose the relevant data to Lua as tables and scalar values through the game API; scripting does not require a second JSON parser. The binding distinguishes JSON null from Lua nil, and empty JSON arrays from empty objects, where those distinctions matter.
 
 The world model and game logic remain independent of SDL-specific presentation details. The flagship uses pixel-art tiles and sprites. The world and its content are not defined in terms of either pixels or terminal glyphs.
 
 Playing together starts as two players on one screen in one process: a second set of keys and a shared view, with no synchronization model needed.
 
-**Open:** Lua API shape and reference lifetime, mobile packaging, and whether networked multiplayer becomes part of the game.
+**Open:** Mobile packaging, and whether networked multiplayer becomes part of the game.
 
 ## Art, licensing, and community
 

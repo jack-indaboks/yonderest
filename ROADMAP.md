@@ -8,14 +8,14 @@ A **build** is one round of building, followed by testing, fixes and bringing th
 
 - **Prototype, 0.0.x.** The game's bones are being settled, and anything may break between builds, saved worlds included. Each build is effectively its own milestone.
 - **Alpha, from 0.1.0.** The bones are settled enough to build on without breaking everything, and worlds are expected to persist. Milestones are named updates that bump the minor version, each made of several builds. A milestone may still break compatibility.
-- **Stable, from 1.0.0.** Compatibility is kept within a major version.
+- **Stable, from 1.0.0.** Compatibility is kept within a major version, including every extension interface modules rely on: a breaking change to one, such as the generator interface, bumps the major version.
 
 ## Prototype: settling the bones
 
 0.1.0 arrives when nothing is left that would break a persistent world or a content pack, and the core loop is complete enough to be worth testing over time.
 
-1. **0.0.7: The world's scale.** The standard 64-block chunk, worlds sized in whole chunks with an endless-feeling starting world, regions, the universe as the unit of a save, the ground line kept with each chunk, terrain features at their own scale, land that settles to meet saved territory, deposits in the rear layer, generation and saving that never hold up play, and tidier command-line options.
-2. **0.0.8: The 32-pixel look.** The 32-pixel art grid, the adaptive view, a new character drawn on a shareable canvas, redrawn world and interface art, and the parallax backdrop.
+1. **0.0.8: The generator as a native module.** The engine loading native modules at defined extension points, the generator as the first of them, and generator add-ons passed to it as declarative content.
+2. **0.0.9: The 32-pixel look.** The 32-pixel art grid, the adaptive view, a new character drawn on a shareable canvas, redrawn world and interface art, and the parallax backdrop.
 3. **Carrying and storage.** The finite backpack, stack sizes, in-world storage, and objects that carry their own state.
 
 A closer search for remaining bones may add builds before 0.1.0.
@@ -26,7 +26,7 @@ Their order is provisional.
 
 - **Reasons to travel.** Several distinct biomes, a broader range of materials and construction, a module configuration players can use, and reliable return journeys across a world worth inhabiting.
 - **The connected universe.** Portals, additional persistent worlds and their different resource ecosystems, making homes and outposts a geography that spans worlds.
-- **Scripting.** Lua, once there is gameplay worth scripting.
+- **Scripting.** A Lua scripting module, once there is gameplay worth scripting.
 
 ## Unsequenced
 

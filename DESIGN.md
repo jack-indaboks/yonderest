@@ -18,7 +18,7 @@ Homes, outposts, and routes form an expanding personal geography. Differences in
 
 ## Worlds and travel
 
-A universe begins with one persistent world. Exploration and crafting eventually make portals to other worlds possible. Portals require substantial investment rather than mandatory combat.
+A universe begins with one persistent world. Exploration and crafting eventually make portals to other worlds possible. The player belongs to the universe, not to any one world, and carries what they have between worlds. Portals require substantial investment rather than mandatory combat.
 
 The starting world does not contain every resource available in the universe. Other worlds offer different environments, resource ecosystems, and possibilities, not merely stronger replacements for everything already found. Each world contains multiple biomes; a world's identity is not one biome stretched across a planet.
 
@@ -32,9 +32,11 @@ Ordinary doors leading to separate pocket interiors are not an established featu
 
 ## Geography and chunks
 
-Each world is a side-scrolling block landscape with generous but finite height and a horizontally wrapping circumference measured in chunks. Traveling continuously east or west returns to the starting location. The vertical axis does not wrap.
+Each world is a side-scrolling block landscape with generous but finite height and a horizontally wrapping circumference. Traveling continuously east or west returns to the starting location. The vertical axis does not wrap.
 
-Chunks partition the world in both horizontal and vertical directions. They are independently generated, loaded, and persisted regions, not full-height columns. Chunk dimensions use powers of two.
+Chunks partition the world in both horizontal and vertical directions. They are independently generated, loaded, and persisted regions, not full-height columns. A chunk is 64 by 64 blocks in every world: chunk size is a standard of the game, not a property of a world, so anything built to the chunk, such as a hand-made chunk from a mod, fits everywhere. A region is 64 by 64 chunks, 4,096 blocks square; it groups chunks for storage.
+
+World dimensions are whole numbers of chunks, chosen per world. The sizes offered when making a world double from one to the next. The starting world feels endless: 4,096 chunks around, over a quarter of a million blocks, and 16 chunks tall, 1,024 blocks, so that reaching the bottom takes effort too. A world can be as small as a few chunks in either direction, up to 65,536 chunks around and one region tall; a world as tall as a region and as wide is one shape for a vertical world.
 
 Vertical geography matters. Worlds have room for meaningful underground depth and occasional sky biomes, not just a surface with a shallow underside. Exploring the ground does not implicitly generate all the terrain above or below it. A later sky-generation module can populate previously ungenerated sky above familiar ground without altering saved chunks.
 
@@ -46,7 +48,7 @@ Landscape features have their own scale. Hills, climate belts and regions are si
 
 Floating terrain fits within the world's vertical bounds. A deep lava sea is a possible lower environment, separate from the actual world boundary; it does not imply a fluid simulation.
 
-**Open:** Exact chunk dimensions, world circumferences and heights, loading margins, and upper and lower boundary behavior.
+**Open:** Loading margins, and upper and lower boundary behavior.
 
 ## Embodied interaction
 
@@ -114,9 +116,9 @@ Without S or W, placement during a jump targets the cell directly before the cha
 
 Every world has two block layers. The rear layer is interactable and nonblocking: it gives houses real rear walls instead of interiors open to the sky, and it lets the character walk past a tree trunk or ladder while still being able to address it. Tree trunks stand in the rear layer; canopies remain in the foreground. Layer membership, collision and climbing are related but distinct questions. No depth traversal or pocket interior follows from having a rear layer.
 
-Underground, the rear layer is as varied as the foreground, with its own resources, perhaps slightly richer than the foreground's, which gives mining a reason even where the screen already shows what lies a few blocks down. Above ground, open sky lies behind the foreground.
+Underground, the rear layer is as varied as the foreground in material, with its own deposits, perhaps slightly richer than the foreground's, hidden until the foreground before them is removed. That gives mining a reason even where the screen already shows what lies a few blocks down. The rear layer has no caves of its own: its variety is in what it holds, not in openings. Above ground, open sky lies behind the foreground.
 
-Behind the rear layer is a backdrop that cannot be touched: a muted texture of the biome's base material, sky above ground, stone below it, and the local base material in other biomes. The backdrop is drawn from where it is, as the sky is; it is not generated or saved as blocks, so there is no third block layer. Removing a foreground block exposes the rear-layer block behind it, and removing that exposes the backdrop.
+Behind the rear layer is a backdrop that cannot be touched: a muted texture of the biome's base material, sky above ground, stone below it, and the local base material in other biomes. The backdrop is set back with parallax, so it reads as distance beyond reach rather than as blocks to mine. It is drawn from where it is, as the sky is; it is not generated or saved as blocks, so there is no third block layer. Where the ground lay when a chunk was generated decides whether sky or stone lies behind it, so digging a hill away does not turn the distance behind it into sky. Removing a foreground block exposes the rear-layer block behind it, and removing that exposes the backdrop.
 
 Generated rear-layer material and its removal persist as world state. Saved terrain keeps whatever rear layer it was saved with, including none. Lighting is separate work.
 
@@ -148,7 +150,7 @@ Saved terrain is authoritative. Adding, removing, or updating generation modules
 
 A new chunk takes boundary conditions only from its immediate neighbors; those conditions carry forward whatever transition remains. At a boundary between generations, the new generator's side settles into the terrain its rules would otherwise produce within roughly one or two chunks. This applies vertically as well as horizontally, including across the world seam. The exploration-order guarantee applies while generation rules are unchanged; changing them can produce different results according to which territory was already saved.
 
-Boundary information may include elevation, slope, geological layers, water levels, or environmental fields, according to the generator's needs. A separate post-generation blending subsystem is not prescribed.
+Boundary information may include elevation, slope, geological layers, water levels, or environmental fields, according to the generator's needs. A separate post-generation blending subsystem is not prescribed. Each chunk keeps what its neighbors and the backdrop need from its generation, starting with where the ground lies across it. A chunk that was not generated, such as one built by hand, can carry the same information or have it read from its blocks, so the land around it generates to meet it.
 
 World parameters and generated material definitions persist wherever they are needed to keep the world consistent. Save and resume preserve player position, inventory, and changes to the world.
 
@@ -162,7 +164,7 @@ Adding an optional property requires neither rewriting existing saves nor a glob
 
 JSON is data, not a graph-mirroring system. Separate occurrences of a material reference its definition by identity; they do not require shared live-node proxies or transclusion.
 
-Each world is one folder holding its world file, its player file and one file per chunk. Nothing is written per action: taking and placing only change memory. A changed chunk is written when it leaves memory, and everything changed is written when the window loses focus, on quitting, and once a minute if anything changed. Each file is replaced whole, so a crash can lose up to the last minute. A small "Saved" shows on the once-a-minute write. The menu offers Resume, Controls, Fullscreen and Quit, and quitting always saves.
+Each universe is one folder holding its player file and a folder for each world. A world folder holds its world file and its chunks, one file per chunk, gathered in a folder per region. Generating, loading and saving never hold up play: they happen alongside it, ahead of where the player is going. Nothing is written per action: taking and placing only change memory. A changed chunk is written when it leaves memory, and everything changed is written when the window loses focus, on quitting, and once a minute if anything changed. Each file is replaced whole, so a crash can lose up to the last minute. A small "Saved" shows on the once-a-minute write. The menu offers Resume, Controls, Fullscreen and Quit, and quitting always saves.
 
 **Open:** Recovery behavior, and the boundary representation used when generation changes landforms rather than materials.
 
@@ -246,13 +248,13 @@ Playing together starts as two players on one screen in one process: a second se
 
 The target is appealing fantasy pixel art, not deliberately coarse placeholders or a nostalgic console or debug-screen treatment. Terraria is a reference for the broader visual experience; Habitica is a reference for compact, enjoyable character art and its fantasy register, not merely a resolution measurement. These are references for qualities, not assets to clone or templates for other game systems.
 
-Art is drawn at 16 native pixels per block, with recognizable, expressive shapes and color clusters composed on that grid rather than a larger illustration shrunk until it is barely recognizable. Colors are rich, not dusty hues with pastel highlights. Shading within a material stays subtle and describes its form; color richness does not require exaggerating local contrast. Cartoon proportions are expected: a tool can be large against the body, and a crawl is a squash, not the standing figure laid flat.
+Art is drawn at 32 native pixels per block, with recognizable, expressive shapes and color clusters composed on that grid rather than a larger illustration shrunk until it is barely recognizable. Colors are rich, not dusty hues with pastel highlights. Shading within a material stays subtle and describes its form; color richness does not require exaggerating local contrast. Cartoon proportions are expected: a tool can be large against the body, and a crawl is a squash, not the standing figure laid flat.
 
-A handful of poses share one 16x16 pixel map: standing, walking, jumping, falling, crawling and striking in profile; a back view with its own two-step shuffle for moving along the wall; an upward strike from behind; and, in midair with S held, a leapfrog posture that carries the block beneath the body rather than on the back. Left is the mirror of right. The held object is in the camera-side hand, so turning around switches hands. The back view still shows the held object. A tool is one image drawn as the standing pose holds it; the game moves it to each pose's hand, mirrors it and turns it for a strike, so every tool, including a mod's, works in every pose. Building materials are recognizable when carried. A front view belongs to customization, for inspecting clothes; play does not need one.
+A handful of poses share one 32x32 pixel map: standing, walking, jumping, falling, crawling and striking in profile; a back view with its own two-step shuffle for moving along the wall; an upward strike from behind; and, in midair with S held, a leapfrog posture that carries the block beneath the body rather than on the back. Left is the mirror of right. The held object is in the camera-side hand, so turning around switches hands. The back view still shows the held object. A tool is one image drawn as the standing pose holds it; the game moves it to each pose's hand, mirrors it and turns it for a strike, so every tool, including a mod's, works in every pose. Building materials are recognizable when carried. A front view belongs to customization, for inspecting clothes; play does not need one.
 
-The silhouette permits later skin, hair, clothing and armor overlays on the same pose maps. That calls for consistent drawing coordinates, not a rig or an elaborate animation system.
+The silhouette permits later skin, hair, clothing and armor overlays on the same pose maps. That calls for consistent drawing coordinates, not a rig or an elaborate animation system. The character canvas is a stable standard, so avatars and overlays made for it can travel between games through mods.
 
-World art renders crisply at integer scale without smoothing its source pixels. Source-pixel density and camera framing are distinct choices: the art grid does not by itself settle viewport size, display zoom or how much world is visible. Placeholder art is unfinished art on the same grid, never a different resolution or visual register.
+World art renders crisply at integer scale without smoothing its source pixels. The view is close and personal while the world is vast: the game picks the largest whole-number scale that still shows a comfortable minimum of the world, about 30 blocks across on common displays, so a larger display shows somewhat more. The interface anchors to the edges and corners of whatever view results. Placeholder art is unfinished art on the same grid, never a different resolution or visual register.
 
 ### Licensing and community
 
@@ -274,7 +276,8 @@ These directions are worth keeping in view without committing to them. None has 
 - **The belt as gear.** Something worn and upgradable that adds carrying capacity, rather than a view into the backpack.
 - **Light RPG elements.** A modest skill tree, and character customization of skin, hair, clothes and armor as overlays on the shared pose maps. A few alternate player characters, such as one with a purple shirt and long hair, could come before full customization.
 - **Tools and activities.** Tools that enable breaking particular blocks or constructing particular structures, and activities such as fishing.
-- **Risk.** Health, hunger, stamina, suffocation, combat, falling, lava, fire and related hazards, serving exploration, homes and connections without gating major systems behind combat. Restore points belong with hazards, if they come.
+- **Risk.** Health, hunger, stamina, suffocation, combat, falling, lava, fire and related hazards, serving exploration, homes and connections without gating major systems behind combat. Restore points belong with hazards, if they come. Hidden lava sources in the rear layer, released by mining, are one such hazard.
 - **New kinds of place.** Urban biomes, and people who live in the world. A rare biome that lifts the familiar surface into a sky continent, with the next biome continuing from the lower ground beneath it and slopes bringing altitudes back to normal within several chunks.
+- **Hand-built chunks.** A mod that is a single hand-made chunk, set at a predetermined unexplored place as if already discovered, with the land around it generating to meet it. Leaving some of a hand-made chunk's cells to the generator would free such places from the chunk's size.
 - **A terminal edition.** An ASCII or Unicode presentation of the same game, secondary to the pixel-art flagship.
 - **Networked multiplayer**, beyond two players sharing a screen.

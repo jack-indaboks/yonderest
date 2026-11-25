@@ -2,7 +2,7 @@
 
 What changed in each tagged version of Yonderest, newest first. What is planned next is in [ROADMAP.md](ROADMAP.md).
 
-## 0.1.0 - 2026-11-21
+## 0.0.6 - 2026-11-21
 
 - Hold W to reach up: dig out the block above your head or place one there, standing or in a jump. While W is held, A and D shuffle sideways without turning. A tap of W still turns you toward the background.
 - Edges are less picky. A jump that catches a corner by a few pixels slips past it, so you can jump into an opening one block high, and a placement while you overlap the next cell by a few pixels goes there, beneath you in a jump as well as in front.

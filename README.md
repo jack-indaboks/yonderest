@@ -1,6 +1,6 @@
 # Yonderest
 
-A 2D fantasy sandbox about exploring, building, and making places your own.
+A fantasy sandbox platformer about exploring, building, and making places your own.
 
 This is a very early prototype: a small test world, one character, a handful of materials and recipes, and no goal beyond building what you like. Things will change between versions, and a world saved now may not open in a later one. Where the game is headed is in [DESIGN.md](DESIGN.md) and [ROADMAP.md](ROADMAP.md).
 

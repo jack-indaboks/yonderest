@@ -40,21 +40,21 @@ World dimensions are whole numbers of chunks, chosen per world. The sizes offere
 
 Vertical geography matters. Worlds have room for meaningful underground depth and occasional sky biomes, not just a surface with a shallow underside. Exploring the ground does not implicitly generate all the terrain above or below it. A later sky-generation module can populate previously ungenerated sky above familiar ground without altering saved chunks.
 
-For persistence and generation, explored territory means generated and persisted chunks, including any loading margin beyond what the player has personally visited. The extent of that margin therefore affects which territory remains available for future generation.
+For persistence and generation, explored territory means generated and persisted chunks, including any loading margin beyond what the player has personally visited. The extent of that margin therefore affects which territory remains available for future generation, so it is kept small. The game loads the chunks the view touches, and the next chunk over only when the view comes within a few blocks of its edge, close enough to stay ahead of a fall. Walking the surface claims the chunk above or the chunk below when the view nears it, not both as a matter of course. Land already loaded can stay in memory well after the player leaves; keeping it generates nothing new.
 
 All spatial generation respects horizontal periodicity: terrain, geology, climate, resources, and ecology. The first and last chunk columns are ordinary neighbors, not special borders repaired after generation. Movement and interaction likewise treat the seam as continuous geography.
 
-Landscape features have their own scale. Hills, climate belts and regions are sized for the land they shape, not stretched to fit the circumference, so a larger world holds more places rather than broader versions of the same ones.
+Floating terrain fits within the world's vertical bounds. A deep lava sea is a possible lower environment, separate from the actual world boundary; it does not imply a fluid simulation. What lies at the top and bottom of a world is the generator's to decide; solid limits are a sensible default.
 
-Floating terrain fits within the world's vertical bounds. A deep lava sea is a possible lower environment, separate from the actual world boundary; it does not imply a fluid simulation.
-
-**Open:** Loading margins, and upper and lower boundary behavior.
+**Open:** How a world's circumference relates to the scale of its landscape features.
 
 ## Embodied interaction
 
-The desired player feel is immediate and character-centered, with Mario-like movement as a reference for that quality, not a template for the whole game. The character is one block tall, so the immediate forward interaction does not ambiguously span two block rows. The character's reach is the block directly before them, not an adjustable radius or a remote target. Ranged attacks mean pointing and shooting into the world, not selecting a distant target. In-world play is keyboard-driven. The mouse is a convenience for interfaces, never for acting on the world, and no function requires it.
+The desired player feel is immediate and character-centered, with Mario-like movement as a reference for that quality, not a template for the whole game. The character is one block, as tall and as wide as the cells of the world, so the immediate forward interaction does not ambiguously span two block rows or columns. The character's reach is the block directly before them, not an adjustable radius or a remote target. That one cell in front is a core mechanic of the game. Ranged attacks mean pointing and shooting into the world, not selecting a distant target. In-world play is keyboard-driven. The mouse is a convenience for interfaces, never for acting on the world, and no function requires it.
 
-Jumps are high and generous; falling is brisk rather than floaty. Walking into a one-block step stops the character; climbing it is a jump, never an automatic step-up.
+A world measured in blocks measures its movement in blocks. A jump rises a whole number of blocks: two, or three if two proves to feel low. Falling is brisk rather than floaty. Walking into a one-block step stops the character; climbing it is a jump, never an automatic step-up.
+
+The character moves smoothly between cells. Its position is a cell plus an offset toward the next, and the offset is only how finely a display shows the movement: a pixel display moves the character pixel by pixel, while a terminal display moves it cell by cell. The rules of movement are stated in cells and time, never in pixels. The leaning is toward movement like Lode Runner's rather than a strict step from cell to cell, as in Pokémon; play decides.
 
 ### Facing and reach
 
@@ -62,13 +62,15 @@ A and D walk and turn the character. Space is the only jump key, and it jumps wh
 
 Holding W reaches up. While W is held, the character faces the wall, and taking and placing address the cell above their head, so they can dig straight up or roof themselves over, standing or in a jump. A and D still move the character while W is held, shuffling along the wall without turning, so a ceiling can be dug out or a roof laid while walking. The upward strike is always seen from behind. Climbing, swimming and other contextual vertical movement remain open.
 
-Placement puts the held block in the first whole cell beyond the character's facing edge, unless S or W aims it below or above. A placed block does not have to touch another: direct access and empty space are enough, and blocks may be placed in midair. This applies to foreground and rear-wall construction alike, not just to scaffolding.
+Placement puts the held block in the cell in front of the character, unless S or W aims it below or above. A placed block does not have to touch another: direct access and empty space are enough, and blocks may be placed in midair. This applies to foreground and rear-wall construction alike, not just to scaffolding.
 
 Objects that share the character's own space, such as a tool set down where they stand, can be taken back.
 
 ### Forgiveness
 
-The game reads intent at the edges instead of demanding pixel precision, and it does so through one consistent rule rather than a collection of exceptions. A jump that would catch a block's corner by a few pixels slips past it, so the character can jump up into a one-block opening. A placement made while the body overlaps a cell boundary by a few pixels goes to the cell the player plainly means. The width of that margin is settled by feel.
+The game reads intent at the edges instead of demanding pixel precision, and it does so through one consistent rule rather than a collection of exceptions: a body belongs to the cell that holds its center. The cell in front is the one beyond that cell. Moving into an opening the body's own size, a body whose center is in the opening's row slips into it, so the character can jump up into a one-block opening or onto a ledge the jump reaches. A whole-block jump keeps this honest: the center never rises into the row above the jump's height, so the rule never lends a third block to a two-block jump. A placement into a cell the body overlaps, but whose center lies elsewhere, moves the body clear. Half a block is not a margin to tune; it is where every position belongs to exactly one cell.
+
+Dropping into a one-block hole works the same way, but how far over the hole the body must be before it drops is settled by play, not by the rule.
 
 The physical constraint creates work, not bad input handling. The player chooses what to do; carrying it out does not require reflexes beyond the intent.
 
@@ -86,7 +88,7 @@ Lateral movement turns the character in the direction of travel, including while
 
 The belt is the set of up to twelve readied stacks in the backpack, presented as a ring around the character. Readying marks a stack where it sits; it does not move it into another container or divide tools from materials. Readiness belongs to the stack, not to the slot that holds it. When a readied stack is used up, its readiness ends with it, and an empty slot is never on the belt. A new kind of object lands in the first open slot of the pack and is readied automatically while fewer than twelve are readied. A further stack of a kind already carried joins that kind wherever it is and is never readied automatically. Un-readying one thing and readying another needs no rearranging of the pack. Twelve suits the clock-like ring; it is not a power-of-two constraint.
 
-The ring shows each readied object with its carried quantity. The selected entry sits above the character's head and the others are subdued. While the ring is open, J/K step through it instead of acting on the world, and WASD keep moving: choosing a tool while walking is part of the interaction. It is the open ring, not the empty hand, that owns J/K.
+The ring shows each readied object with its carried quantity. The selected entry sits above the character's head and the others are subdued. While the ring is open, the actions J and K trigger step through it instead of acting on the world, and WASD keep moving: choosing a tool while walking is part of the interaction. It is the open ring, not the empty hand, that gives those actions this meaning. The ring's entries can also be clicked or tapped, which makes the ring natural on a touch screen.
 
 Each Hand press makes the next transition: from a held object to the empty hand, from the empty hand to the ring, and from the ring to holding its selection. The ring opens on the last-used object when it is readied. These are immediate transitions, not double-tap windows or hold gestures, and closing the ring never triggers the chosen tool's action. Using up the held stack returns to the empty hand. The backpack can also put any carried object straight into the hand without readying it; the ring shows only the belt.
 
@@ -104,7 +106,7 @@ Opened interfaces support the mouse and complete keyboard navigation with arrow 
 
 The recipe book is a small reference that stays open while building, not a screen-dominating dialog. R shows or hides it; Left and Right turn its pages while it is visible, and the mouse can do the same. An open dialog takes precedence for interface navigation. It shows each recipe's physical arrangement, material icons, quantities, result and required working surfaces clearly, and it never crafts anything itself. It needs no pin action, confirmation press or focus mode, does not pause play, and takes over neither WASD nor H/J/K/L nor Escape merely by being visible.
 
-Whatever the world can show, it shows: the held block or tool is recognizable in the character's hand, and facing and actions read through the sprite. Exact quantities belong to the ring and the backpack. There are no permanent captions for what is held or targeted, no coordinates, and no keyboard manual over the world. Save feedback is brief and separate from pause, which is shown only while play is actually paused.
+Whatever the world can show, it shows: the held block or tool is recognizable in the character's hand, and facing and actions read through the sprite. Exact quantities of what is carried belong to the ring and the backpack. There are no permanent captions for what is held or targeted, no coordinates, and no keyboard manual over the world. Save feedback is brief and separate from pause, which is shown only while play is actually paused.
 
 ### Building without help
 
@@ -118,7 +120,7 @@ Every world has two block layers. The rear layer is interactable and nonblocking
 
 Underground, the rear layer is as varied as the foreground in material, with its own deposits, perhaps slightly richer than the foreground's, hidden until the foreground before them is removed. That gives mining a reason even where the screen already shows what lies a few blocks down. The rear layer has no caves of its own: its variety is in what it holds, not in openings. Above ground, open sky lies behind the foreground.
 
-Behind the rear layer is a backdrop that cannot be touched: a muted texture of the biome's base material, sky above ground, stone below it, and the local base material in other biomes. The backdrop is set back with parallax, so it reads as distance beyond reach rather than as blocks to mine. The generator decides what backdrop lies behind each place, so it can differ from biome to biome and with depth. Digging does not change it: the distance behind a hill stays where it was when the hill is gone. The backdrop is never a block, so there is no third block layer. Removing a foreground block exposes the rear-layer block behind it, and removing that exposes the backdrop.
+Behind the rear layer is a backdrop that cannot be touched: a muted texture of the biome's base material, sky above ground, stone below it, and the local base material in other biomes. The backdrop is set back with parallax, so it reads as distance beyond reach rather than as blocks to mine. The generator decides what backdrop lies behind each place, so it can differ from biome to biome and with depth; how it does so is generator work. The backdrop is never a block, so there is no third block layer. Removing a foreground block exposes the rear-layer block behind it, and removing that exposes the backdrop.
 
 Generated rear-layer material and its removal persist as world state. Saved terrain keeps whatever rear layer it was saved with, including none. Lighting is separate work.
 
@@ -152,13 +154,13 @@ A new chunk takes boundary conditions only from its immediate neighbors; those c
 
 Boundary information may include elevation, slope, geological layers, water levels, or environmental fields, according to the generator's needs. A separate post-generation blending subsystem is not prescribed. What a generator keeps about each chunk for later neighbors is its own business. Land generated beside a chunk that was never generated, such as one built by hand, still meets it.
 
-World parameters and generated material definitions persist wherever they are needed to keep the world consistent. Save and resume preserve player position, inventory, and changes to the world.
+World parameters and generated material definitions persist wherever they are needed to keep the world consistent. Save and resume preserve player position, inventory, and changes to the world. An entity's position is saved as its cell; the offset toward the next cell lives only in memory while the entity is loaded.
 
 ### Save representation
 
 Saves are ordinary JSON plaintext, readable and editable outside the game. Persistence supports geographically bounded loading and writing without reading or rewriting the whole explored world. There is no database in persistence.
 
-The representation describes game meaning through named properties, stable content identifiers and explicit spatial structure, not C++ memory layouts or positional records wrapped in JSON strings. JSON is read into the game's own plain data where a file is loaded, and written from it where a file is saved; the rest of the game never handles JSON. No library mirrors C++ structures into JSON automatically, since a code change would then silently change the save format. Each property is grouped under the module that owns it, in saves and in content alike, so two modules never claim the same name.
+The representation describes game meaning through named properties, stable content identifiers and explicit spatial structure, not C++ memory layouts or positional records wrapped in JSON strings. JSON is read into the game's own plain data where a file is loaded, and written from it where a file is saved; the rest of the game never handles JSON. The save format changes only on purpose, never as a side effect of renaming something in code. Each property is grouped under the module that owns it, in saves and in content alike, so two modules never claim the same name.
 
 Adding an optional property requires neither rewriting existing saves nor a global format version. Absence has a meaning appropriate to the feature: a layer absent from older terrain, for example, means that layer is empty. Removing a property leaves no dummy positional slot. Properties the game does not recognize neither invalidate a save nor disappear when the game rewrites the file. A genuine change of meaning may need interpretation, but there is no ladder of upgrades for every build and no automatic backup on each upgrade.
 
@@ -182,17 +184,23 @@ Appearance and gameplay properties draw on the same material definition where pr
 
 One object vocabulary spans terrain, carried gear, storage and placed objects, without separate item and block identities. A sword can be set down, render as a sword-shaped block, and let the character walk past it. Being a block does not mean filling a square visually or blocking movement.
 
-The implications remain open: occupancy, mutable or unique object state, wielding and using a carried block, and the treatment of moving actors. The direction does not prescribe a particular serialization or entity architecture merely by its name.
+The block is the unit of measure. Nothing in the world is smaller than a block: not the character, not a creature, not a projectile. Some things can be larger, taking up several whole cells. A cell's layer holds one block, which may or may not block movement; a nonblocking block, such as a tool set down, can share its cell with the character.
+
+Things that move are entities. In geometry they are blocks, occupying whole cells; in data they are separate from the chunks. Each entity is saved apart from the terrain, with its own cell, and moves smoothly between cells while loaded (see Embodied interaction). Two entities meeting in one cell is how a hit is meant to work: a projectile, when projectiles come, hits what shares its cell. Play will test whether that holds.
+
+Still open: mutable or unique object state, and wielding and using a carried block beyond the current actions. The direction does not prescribe a particular serialization merely by its name.
 
 ### Crafting as construction
 
 Crafting is construction. Placing ingredient blocks in a recipe's physical arrangement transforms them when the pattern completes, rather than opening a crafting grid. Completion is shown by a brief transformation, never an abrupt swap. Automatic completion is the starting choice; a more intentional finish action remains possible. Physical assembly stays only if it proves enjoyable in play.
 
+An arrangement is made of whatever blocks stand in it, natural or placed; the game does not tell them apart for crafting. A formation in a hillside can therefore complete a recipe by accident, the way a golem can be built by accident.
+
 Some recipes require a working surface underneath. Ingredients are consumed; the required surface remains. A forge is used by literally building over it, not by being inside a nearby bonus radius.
 
 The forge serves metallurgy and the making of metal tools, not generic melting or firing. Whether it also serves glass, bricks and similar products is open. A fuel layer between the ingredients and the forge is not a requirement. Station requirements, fuel and ingredient geometry need further thought.
 
-A workbench provides batching. For batch size N, each ingredient placement consumes N units from inventory, and the completed recipe yields its ordinary output multiplied by N. This changes repetition, not the material cost per result. Unfinished ingredient quantities survive saving and dismantling without changing their meaning.
+A workbench provides batching. For batch size N, each ingredient placement consumes N units from inventory, and the completed recipe yields its ordinary output multiplied by N. This changes repetition, not the material cost per result. Unfinished ingredient quantities survive saving and dismantling without changing their meaning. The result is the whole batch too: it stands in the world as one block holding the entire output, the recipe's amount times N, and taking it takes all of it. A block holding more than one shows its quantity in the world, perhaps only while the character addresses it.
 
 Stations compose through physical layout. To batch a recipe that requires a forge, put the forge and workbench beside each other and build the ingredient configuration over both. Neither station is consumed, and no separate bulk version of the recipe is needed.
 
@@ -202,7 +210,7 @@ Stations compose through physical layout. To batch a recipe that requires a forg
 
 The flagship game is an engine and a curated collection of modules, not a single binary. The product is the flagship game, not the engine: modularity is a property of the game, which lets it be rebuilt part by part while it remains itself. Flagship-first determines which functionality is developed first, not a bias toward coupling or privileged first-party code: first-party modules use exactly the mechanisms open to everyone else. A versioned flagship manifest names the modules that make up the standard game.
 
-Interfaces are cut where the flagship's own modules actually meet, sized to what those modules need, not generalized in advance for hypothetical replacements. Shared operations are implemented once and generalized where that serves the game's uses.
+Code fits what its uses actually need. Where two things need the same thing, it is generalized and written once. Where they need only similar things, forcing one general solution onto both is the wrong fit.
 
 ### The engine
 
@@ -210,56 +218,77 @@ The engine is the keeper of the world and the place where modules meet. It holds
 
 The engine has five responsibilities:
 
-- **Space.** The shape of universes and worlds: a two-dimensional, horizontally wrapping, finite-height grid in chunks and regions, the layers of its cells, and where actors are.
+- **Space.** The shape of universes and worlds: a two-dimensional, horizontally wrapping, finite-height grid in chunks and regions, the layers of its cells, and where entities are. The cell is the unit of that geometry: nothing in the world is smaller.
 - **Identity.** Stable identifiers for blocks, modules and worlds, and for each thing the properties that modules own. The engine keeps a module's properties without reading them.
 - **Time.** The tick, the order of changes, and the scheduling of work ahead of play, so every module sees one consistent world.
-- **Memory.** Persistence: what changed is kept, and saved state is authoritative.
-- **Hosting.** Loading modules, checking interface versions, resolving dependencies, and carrying data and events between modules, so that modules react to changes rather than calling one another.
+- **Memory.** A module hands the engine its data and asks it to be kept; the engine writes it as JSON and gives it a persistent home. Saved state is authoritative.
+- **Hosting.** Loading modules, checking interface versions, resolving dependencies, and carrying events between modules through hooks. A pre-hook comes before a change, and modules can refuse or adjust it: a placement onto a workbench asks how many blocks it takes before anything is taken. An event follows the change, and modules react to it: a placement that completes an arrangement lets crafting transform it. Modules react to one another through hooks rather than calling one another.
+
+The player belongs to the engine: it is the point where every module meets. The engine frames each action: which entity acts, the cell in front of it, the block it holds, and which action it performs, such as action A or action B. Everything those mean comes from modules: that the held block is a pick, that the cell holds copper, that action A is taking, and that J triggers action A.
 
 The test for any feature: if it must interpret what something means, it belongs to a module; if it only keeps, places, orders or connects, it belongs to the engine. The shape of space is the engine's; what fills it is declared by modules.
 
+### Interfaces
+
+An interface is where the engine and modules talk. Each has one job:
+
+- **Generation** populates the world.
+- **Physics** governs movement within it.
+- **Interaction** turns the player's intent into outcomes.
+- **Controls** turn the player's input into intent.
+- **Display** decides how the player sees everything.
+- **Persistence** keeps everything the same when the player comes back to it. Modules hand over their data; the engine keeps it.
+
+Within an interface, a module either replaces the base or layers over it. The base goes first, and layers follow in order, each working with what is already there. Standard physics is the base for movement; a space mod might replace it, while a swimming mod layers over it and recognizes water. Generation works the same way, in passes.
+
+Interfaces and modules need not line up. Each module has one job too, and it touches whichever interfaces that job needs. The inventory needs controls for its key, interaction for what happens inside it, display to be drawn and persistence for its contents. A space mod might replace the base physics and bring its own generator. The flagship's core modules happen to line up with the interfaces almost one to one; that is convenient, not required.
+
+What each interface carries, its verbs, is worked out as the modules that use it are built.
+
 ### Layers
 
-The engine keeps the layers of each cell; modules declare which layers exist and what they hold. The flagship's content declares two block layers, the foreground and the rear layer (see Background depth), and modules depend on that declaration rather than on each other. Other modules can declare more: fluids, wiring or light are each a layer of the cell. A layer is either kept or derived. A kept layer is saved and filled when land is generated; in chunks saved before its module was added, it is empty. A derived layer, such as light or decoration computed from the other layers, is worked out whenever a chunk loads or changes, everywhere including older land, and is never generated or saved. Modules reach layer data in bulk, through handles, fast enough for work done every tick.
+The engine keeps the layers of each cell. The flagship's content declares two block layers, the foreground and the rear layer (see Background depth), and modules depend on that declaration rather than on each other. Since a world has two, a module can add more. A layer a module adds is saved like the others, and is empty in chunks saved before that module was added.
 
 ### The flagship's modules
 
-The flagship is made of these modules, nearly all of them core: replacing one comes close to making a different game, which the architecture permits but the flagship does not need.
+Core modules are the ones the game needs before alpha: those already built or on the roadmap, and any others that become evident before then. Replacing one comes close to making a different game, which the architecture permits but the flagship does not need.
 
-- **The generator** makes new land (see The generator below).
-- **Physics** is shared ground: one per world, offering the rules of movement and collision to every actor, so the player and a creature agree on what is solid. It reads the world's parameters, so gravity can differ between worlds.
-- **Embodiment** is the character: one block tall, facing, reach and the forgiveness margin, moving through physics.
-- **Controls** turn input into intents, such as facing, aiming, placing, hitting and opening the ring, offered to the modules that act on them. Touch or gamepad controls are other controls modules.
-- **Crafting** reads arrangements and transforms them.
-- **Tools** give held objects their capabilities and requirements.
-- **Inventory** keeps what the character carries, including the belt of what is ready.
-- **Presentation** decides how everything is represented: whether a block is drawn in 16 pixels, 256 or a single character, how the view fits the screen, and how the interface looks. Texture packs are made for a particular presentation module, as add-ons are made for a particular generator. A terminal edition would be another presentation module.
-- **Scripting** hosts scripts, starting with Lua.
-- **Content** modules carry the flagship's blocks, recipes and layer declarations as data. The flagship's art is a texture pack for its presentation module.
+- **The generator** populates new land, including its water, its backdrop and the limits at the top and bottom of the world (see The generator below).
+- **Standard physics** moves entities: walking, jumping and falling, measured in blocks. It reads a world's parameters, so movement can differ between worlds. Swimming and flying would layer over it; a space mod would replace it.
+- **Basic interaction** gives the actions their base meanings: taking a block and placing the held one.
+- **Crafting** layers over interaction. It reacts to placements and removals and transforms completed arrangements. Recipe mods extend it through its own format.
+- **Inventory** keeps what the character carries. The picker, the ring of readied objects, may be an add-on to it, and storage builds on it.
+- **Keyboard controls** bind keys to actions. Touch and gamepad controls are other controls modules.
+- **The pixel display** decides how everything is represented: whether a block is drawn in 16 pixels, 256 or a single character, how the view fits the screen, and how the interface looks. Sprite sheets are made for a particular display, as add-ons are made for a particular generator. A terminal display would replace it.
+- **Content packs** carry the flagship's blocks and recipes as data, along with tools such as the pick and the copper that needs it. A tool's behavior is an interaction rule in which the held block matters. The flagship's art is a sprite sheet for its display.
+
+Scripting is an important module but not a core one; a Lua module arrives during alpha.
 
 Each module has its own version; the flagship's version is the version of the game.
 
 ### Native modules
 
-A module is a folder holding its declaration, and optionally data and a native library; a content pack is simply a module without code, and one loader handles both. A native module's library attaches to the engine at a defined extension point through a narrow C interface. Any language that can speak that interface can build one. Each extension point owns its interface and its version, checked when a module loads. There is no universal binary interface for everything, and adding an extension point never breaks the existing ones. Desktop platforms load native modules at runtime; platforms that forbid loading code link the same interfaces in when the game is built, so modding there is more limited. Changes that no extension point reaches call for a custom build of the engine.
+A module is a folder holding its declaration, and optionally data and a native library; a content pack is simply a module without code, and one loader handles both. A native module's library talks to the engine through the engine's interfaces, each a narrow C interface. Any language that can speak them can build one. A module declares which interfaces it uses and the version of each it was made for, and that is checked when it loads. There is no universal binary interface for everything, and adding an interface never breaks the existing ones. Desktop platforms load native modules at runtime; platforms that forbid loading code link the same modules in when the game is built, so modding there is more limited. Changes that no interface reaches call for a custom build of the engine.
 
 Everything crossing the boundary is plain C values and handles, never engine internals or raw JSON: the engine does the parsing. References held by a module have defined lifetimes across chunk loading and unloading. A native module runs with the full rights of any program; installing one is a decision to trust its author.
 
-The engine is not the only thing that offers extension interfaces. Any module can offer its own, in whatever form suits it: a declarative format, a C interface, a scripting API. The Lua module offering a Lua API to scripts and a generator offering an interface to the mods that extend it are the same shape. A mod built on a module's interface depends on that module, and on the version of the interface it was made for.
+Modules can offer interfaces to other modules as well. Any module can offer its own, in whatever form suits it: a declarative format, a C interface, a scripting API. The Lua module offering a Lua API to scripts and a generator offering an interface to the mods that extend it are the same shape. A mod built on a module's interface depends on that module, and on the version of the interface it was made for.
 
 ### Declarative content
 
 Content packs carry data without programming: blocks, recipes, textures, sprites, and the definitions that modules accept, such as biomes for a generator. Carried and stored objects participate in this content path as blocks, not as a separate item type. Each part of a pack belongs to whoever defines its format, the engine or a module, and the engine passes a module's parts to it without interpreting them.
 
-Declarative content is JSON, like saves. Its familiar syntax and tooling lower the entry cost for modders, including those coming from Minecraft. Sharing a notation does not require content definitions and saved state to have identical structures or inherit Minecraft's game model. Images remain image assets, and behavior remains code; JSON replaces neither. Art travels by convention, the same way for first-party packs and mods: a pack's images are found by name, and later packs override earlier ones.
+Declarative content is JSON, like saves. Its familiar syntax and tooling lower the entry cost for modders, including those coming from Minecraft. Sharing a notation does not require content definitions and saved state to have identical structures or inherit Minecraft's game model. Images remain image assets, and behavior remains code; JSON replaces neither. Art travels the same way for first-party packs and mods. A texture pack is a sprite sheet made for a particular display; how a block finds its image on a sheet, and how a later pack overrides an earlier one, belong to that display's design.
 
 ### Scripting
 
-Scripting languages are native modules that host scripts. A Lua module embeds an interpreter and offers the game's extension points to scripts; it is expected first, not a privileged tier. Scripts are where most modding happens: a script is one file that runs wherever its host module exists, needs no compiler, and can be confined by its host. Platforms that cannot load native modules build the scripting module in, so scripts stay portable. Language bindings derive from the C interface definitions, including LuaLS annotations, rather than being maintained as parallel type systems. A binding preserves the distinctions data needs, such as JSON null against Lua nil and empty arrays against empty objects.
+Scripting languages are native modules that host scripts. A Lua module embeds an interpreter and offers the engine's interfaces to scripts; it is expected first, during alpha, not a privileged tier. Scripts are where most modding happens: a script is one file that runs wherever its host module exists, needs no compiler, and can be confined by its host. Platforms that cannot load native modules build the scripting module in, so scripts stay portable. Language bindings derive from the C interface definitions, including LuaLS annotations, rather than being maintained as parallel type systems. A binding preserves the distinctions data needs, such as JSON null against Lua nil and empty arrays against empty objects.
 
 ### The generator
 
-A generator is a native module that attaches at the generation extension point, the first extension point. Each world names one. It decides which factors that world's generation can consider at all, and it does the work: given a chunk's place, the world's parameters, its neighbors' boundary information and the add-on data addressed to it, it fills the layers it knows, decides the backdrop, and keeps whatever data of its own it needs for later neighbors. A module that adds a kept layer fills that layer in new land, either through the engine or through an interface the generator offers. Through the engine, generation runs as passes: after the generator, each module that owns another kept layer fills its own, reading the layers before it, so a water module can place water by the terrain without knowing which generator made it. A layer that needs the generator's internal fields, such as humidity or biome, depends on the interface that generator offers. Its result depends only on those inputs, and it runs alongside play.
+A generator is a native module that serves as the base of generation. Each world names one. It decides which factors that world's generation can consider at all, and it does the work: given a chunk's place, the world's parameters, its neighbors' boundary information and the add-on data addressed to it, it fills the layers it knows, decides the backdrop, and keeps whatever data of its own it needs for later neighbors. A module that adds a layer fills that layer in new land, either through the engine or through an interface the generator offers. Through the engine, generation runs as passes: after the generator, each module that owns another layer fills its own, reading the layers before it. A layer that needs the generator's internal fields, such as humidity or biome, depends on the interface that generator offers. Its result depends only on those inputs, and it runs alongside play.
+
+A new world begins when the engine asks the generator for its first chunk, in column zero. The generator chooses that chunk's height by its own rules so that it contains ground, and the engine places the character on the ground inside it. Nothing else in the column is generated. The engine gives every world a seed; a generator may ignore it.
 
 Generation mods take three forms:
 
@@ -267,7 +296,7 @@ Generation mods take three forms:
 - **Patches** have logic of their own and extend a generator without replacing it, through whatever interface the generator offers for them, native or scripted.
 - **Generators** themselves. Writing one is a far larger undertaking than an add-on, but installing one is no different from installing any other native module, and a new world can use any generator installed. A later generator is likely to offer a scripting surface, which may be what most distinguishes it.
 
-A world can move to a different generator, whether the flagship's next one or any other installed. It keeps every chunk it has; the new generator makes only new territory, settling against chunks the previous one made. Each flagship release includes only its current generator, so a player who wants a world to continue with an older one keeps that module installed. Each chunk records which generator and which add-ons produced it.
+A world can move to a different generator, whether the flagship's next one or any other installed. It keeps every chunk it has; once generated, a chunk simply is the world there. The new generator makes only new territory, meeting the chunks already there as it meets any neighbor. Each flagship release includes only its current generator, so a player who wants a world to continue with an older one keeps that module installed.
 
 Installing or upgrading the game checks every world's generator. A world whose generator would be missing, or would no longer load because the engine has moved past its interface version, is caught then, and resolved there: by an updated build of the same generator, or by moving the world to another. It is not discovered on opening the world.
 
@@ -281,19 +310,17 @@ Extensions can introduce distinct semantic actions rather than being forced to o
 
 Disabling a module does not erase its saved identifiers. For example, a block saved as `crystal_expansion:blue_crystal` retains that identity even when the defining module is absent.
 
-The provisional interpretation is a common dirt-like fallback with ordinary collision, mining, and gameplay behavior, drawn so that the missing identity is recognizable. That interpretation does not replace the saved identifier. Restoring the module restores the original interpretation wherever the content has not been changed. Deliberate player actions can modify or destroy it.
+The provisional interpretation is a common dirt-like fallback: every property the missing definition would have supplied takes its default, giving ordinary collision, mining and gameplay behavior. It is drawn with the first image of the first sprite sheet, which is dirt by default; a sprite sheet may make that first image a question mark instead. That interpretation does not replace the saved identifier. Restoring the module restores the original interpretation wherever the content has not been changed. Deliberate player actions can modify or destroy it.
 
-**Open:** Module declaration and compatibility details; which extension points follow the generator, and the shape of each interface; how actions are registered and bound; and the final appearance and behavior of unknown content.
+**Open:** Module declaration and compatibility details; the verbs each interface carries, worked out as the modules using it are built; and how actions are registered and bound.
 
-## Runtime and presentation
+## Runtime and display
 
 The engine is C++20 with SDL3 and CMake; the flagship's scripting module uses standard Lua. The game is platform-neutral: its code depends on no single operating system, and supporting a platform means adding a thin surface for it, not reworking the game. Linux, macOS, Windows, Android, and iOS are all intended.
 
-The build never downloads its own dependencies: everything it needs is installed on the machine or kept in the repository.
+The world model and game logic remain independent of SDL and of any display's details. The flagship uses pixel-art tiles and sprites. The world and its content are not defined in terms of either pixels or terminal glyphs.
 
-The world model and game logic remain independent of SDL-specific presentation details. The flagship uses pixel-art tiles and sprites. The world and its content are not defined in terms of either pixels or terminal glyphs.
-
-The engine is the program a player starts, and it runs the frame. Each frame it lets the presentation module, which owns the window, collect what happened, passes input on to the controls module, advances time, and asks presentation to draw. The window, the display and input devices belong to those modules; what the engine itself needs from the operating system, such as file locations and loading module libraries, is a small platform-specific part of the engine. On platforms where the operating system drives each frame, that part answers the operating system's calls instead of running a loop of its own. Supporting a platform therefore means that small part of the engine plus presentation and controls modules made for it.
+The engine is the program a player starts, and it runs the frame. Each frame it lets the display module, which owns the window, collect what happened, passes input on to the controls module, advances time, and asks the display to draw. The window, the screen and input devices belong to those modules; what the engine itself needs from the operating system, such as file locations and loading module libraries, is a small platform-specific part of the engine. On platforms where the operating system drives each frame, that part answers the operating system's calls instead of running a loop of its own. Supporting a platform therefore means that small part of the engine plus display and controls modules made for it.
 
 Playing together starts as two players on one screen in one process: a second set of keys and a shared view, with no synchronization model needed.
 
@@ -303,7 +330,7 @@ Playing together starts as two players on one screen in one process: a second se
 
 ### Visual direction
 
-Representation belongs to the presentation module. What follows is the direction of the flagship's presentation module and the texture pack made for it.
+Representation belongs to the display module. What follows is the direction of the flagship's pixel display and the sprite sheet made for it.
 
 The target is appealing fantasy pixel art, not deliberately coarse placeholders or a nostalgic console or debug-screen treatment. Terraria is a reference for the broader visual experience; Habitica is a reference for compact, enjoyable character art and its fantasy register, not merely a resolution measurement. These are references for qualities, not assets to clone or templates for other game systems.
 
@@ -321,7 +348,7 @@ Code and the prototype's original material data and code-drawn placeholder visua
 
 Contributed and imported art may carry any Creative Commons license that leaves the game able to use it. Attribution and share-alike licenses suit it: share-alike binds the art and its modified versions, not the game around it. Non-commercial licenses are discouraged, since they close distribution doors as well as commercial ones. No-derivatives licenses are unsuitable, because tints, palettes and overlays modify the art they are applied to.
 
-Placeholder art can establish readable geography and interactions before the visual identity is complete. AI-generated artwork may be used with transparent provenance. Human-created replacements and texture packs are encouraged, including compatibility with procedural palettes and material variation.
+Placeholder art can establish readable geography and interactions before the visual identity is complete. AI-generated artwork may be used with transparent provenance. Human-created replacements and sprite sheets are encouraged, including compatibility with procedural palettes and material variation.
 
 Community selection of future flagship artwork and an ongoing relationship with an artist are possibilities, not arrangements already made. Previous art can remain available where its licensing permits.
 
@@ -335,8 +362,9 @@ These directions are worth keeping in view without committing to them. None has 
 - **The belt as gear.** Something worn and upgradable that adds carrying capacity, rather than a view into the backpack.
 - **Light RPG elements.** A modest skill tree, and character customization of skin, hair, clothes and armor as overlays on the shared pose maps. A few alternate player characters, such as one with a purple shirt and long hair, could come before full customization.
 - **Tools and activities.** Tools that enable breaking particular blocks or constructing particular structures, and activities such as fishing.
-- **Risk.** Health, hunger, stamina, suffocation, combat, falling, lava, fire and related hazards, serving exploration, homes and connections without gating major systems behind combat. Restore points belong with hazards, if they come. Hidden lava sources in the rear layer, released by mining, are one such hazard.
+- **Risk.** Health, hunger, stamina, suffocation, combat, falling, lava, fire and related hazards, serving exploration, homes and connections without gating major systems behind combat. Hidden lava sources in the rear layer, released by mining, are one such hazard.
 - **New kinds of place.** Urban biomes, and people who live in the world. A rare biome that lifts the familiar surface into a sky continent, with the next biome continuing from the lower ground beneath it and slopes bringing altitudes back to normal within several chunks.
 - **Hand-built chunks.** A mod that is a single hand-made chunk, set at a predetermined unexplored place as if already discovered, with the land around it generating to meet it. Leaving some of a hand-made chunk's cells to the generator would free such places from the chunk's size.
-- **A terminal edition.** An ASCII or Unicode presentation of the same game, secondary to the pixel-art flagship.
+- **A terminal edition.** An ASCII or Unicode display of the same game, secondary to the pixel-art flagship.
+- **An intentional build trigger.** When the cell in front of the character belongs to a completed arrangement, an icon showing the result appears, and K, or a click or tap on the icon, completes the build. A hunch about where crafting may end up, not a direction.
 - **Networked multiplayer**, beyond two players sharing a screen.

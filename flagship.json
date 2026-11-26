@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "packs": [
+    {"id": "base", "version": 1},
+    {"id": "expedition", "version": 1},
+    {"id": "workshop", "version": 1},
+    {"id": "art", "version": 1}
+  ],
+  "generator": {"terrain": "expedition"}
+}

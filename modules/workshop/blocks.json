@@ -1,0 +1,9 @@
+[
+  {"id": "workshop:planks", "name": "Planks"},
+  {"id": "workshop:workbench", "name": "Workbench", "crafting": {"station": "workbench"}},
+  {"id": "workshop:forge", "name": "Forge", "crafting": {"station": "forge"}},
+  {"id": "workshop:bricks", "name": "Bricks"},
+  {"id": "workshop:glass", "name": "Glass"},
+  {"id": "workshop:copper", "name": "Copper tiles"},
+  {"id": "workshop:pick", "name": "Stone pick", "physics": {"solid": false}, "interaction": {"tool": "pick"}}
+]

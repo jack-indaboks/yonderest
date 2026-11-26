@@ -29,13 +29,13 @@ Your right hand does the work:
 - **K** uses.
 - **L** places what you hold.
 
-Recipes are shapes: build one in the world and it becomes what it makes. R opens the recipe book, I your inventory, P pauses, and Esc opens the menu.
+Recipes are shapes: build one in the world and it becomes what it makes. Blocks already standing count as well as ones you place, so a formation in a hillside can complete a recipe by accident. R opens the recipe book, I your inventory, P pauses, and Esc opens the menu.
 
 ## Saving the world
 
 Each save is a folder in `yonderest/saves/` inside your user data folder: `$XDG_DATA_HOME` if it is set, otherwise `~/.local/share`. The game opens the save called `first` unless you name another with `--save NAME`, and a new save's world is over a quarter of a million blocks around unless you choose its size with `--size`. A save holds you and your world as plain JSON files you can read and edit. It is saved when you quit, when the window loses focus, and once a minute while you play.
 
-Worlds from version 0.0.6 and earlier do not open in this version.
+Worlds from version 0.0.7 and earlier do not open in this version.
 
 ## License
 

@@ -2,6 +2,13 @@
 
 What changed in each tagged version of Yonderest, newest first. What is planned next is in [ROADMAP.md](ROADMAP.md).
 
+## 0.0.8
+
+- Yonderest is now an engine and a collection of modules, each in a folder of its own: the generator, physics, interaction, crafting, the inventory, keyboard controls and the pixel display, with the flagship's blocks, recipes and art as packs. The game plays as before, apart from the two changes below.
+- Crafting counts every block standing in a recipe's shape, natural or placed, so a formation in a hillside can complete a recipe by accident.
+- Blocks are no longer mirrored at random across the world: every block of a kind is drawn the same way.
+- Saves and packs keep each property under the part of the game it belongs to. Worlds from 0.0.7 and earlier no longer open.
+
 ## 0.0.7
 
 - Worlds from 0.0.6 and earlier no longer open. They stay where they were, and version 0.0.6 can still open them.

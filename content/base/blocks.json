@@ -1,8 +1,0 @@
-[
-  {"id": "base:soil", "name": "Earth", "color": [133, 85, 64]},
-  {"id": "base:grass", "name": "Moss", "color": [86, 139, 79]},
-  {"id": "base:stone", "name": "Stone", "color": [99, 111, 126]},
-  {"id": "base:sand", "name": "Sand", "color": [201, 174, 111]},
-  {"id": "base:timber", "name": "Timber", "color": [140, 105, 65]},
-  {"id": "base:leaves", "name": "Leaves", "color": [53, 108, 79]}
-]

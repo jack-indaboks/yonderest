@@ -1,0 +1,4 @@
+[
+  {"id": "expedition:clay", "name": "Clay"},
+  {"id": "expedition:copper_ore", "name": "Copper ore", "interaction": {"requires_tool": "pick"}}
+]

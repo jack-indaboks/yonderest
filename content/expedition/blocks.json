@@ -1,4 +1,0 @@
-[
-  {"id": "expedition:clay", "name": "Clay", "color": [174, 106, 81]},
-  {"id": "expedition:copper_ore", "name": "Copper ore", "color": [101, 116, 124], "requires_tool": "pick"}
-]

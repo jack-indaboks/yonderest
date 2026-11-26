@@ -1,0 +1,8 @@
+[
+  {"id": "base:soil", "name": "Earth"},
+  {"id": "base:grass", "name": "Moss"},
+  {"id": "base:stone", "name": "Stone"},
+  {"id": "base:sand", "name": "Sand"},
+  {"id": "base:timber", "name": "Timber"},
+  {"id": "base:leaves", "name": "Leaves"}
+]

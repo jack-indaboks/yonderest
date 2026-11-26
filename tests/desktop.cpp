@@ -1,5 +1,5 @@
-#include "app.hpp"
-#include "save.hpp"
+#include "yonderest/host.hpp"
+#include "yonderest/inventory.hpp"
 
 #include <SDL3/SDL.h>
 #include <atomic>
@@ -13,7 +13,52 @@
 
 using namespace std::chrono_literals;
 using namespace yonder;
+namespace yonder {
+namespace physics { void attach(Host&); }
+namespace interaction { void attach(Host&); }
+namespace inventory { void attach(Host&); }
+namespace crafting { void attach(Host&); }
+namespace generator { void attach(Host&); }
+}
 namespace {
+
+// The game without its window or keys, to set the scene and read the outcome.
+struct Headless {
+    Host host;
+    Headless(const std::string& content, const std::filesystem::path& save) : host(options(content, save)) {
+        physics::attach(host);
+        interaction::attach(host);
+        inventory::attach(host);
+        crafting::attach(host);
+        generator::attach(host);
+        host.start();
+    }
+    static Options options(const std::string& content, const std::filesystem::path& save) {
+        Options o;
+        o.content = content;
+        o.path = save;
+        o.seed = 42;
+        o.size = {8, 4};
+        return o;
+    }
+};
+
+// What the player carries and has readied, as the inventory keeps it.
+void carrying(Player& p, std::vector<std::pair<Block, int>> carried, std::vector<Block> ready) {
+    Value::Object counts;
+    for (auto& [id, n] : carried) counts.emplace_back(id, Value(n));
+    Value own;
+    own.set("carried", Value(std::move(counts)));
+    if (!ready.empty()) own.set("ready", Value(Value::Array(ready.begin(), ready.end())));
+    p.properties.set("inventory", std::move(own));
+}
+
+std::vector<Block> readied(const Player& p) {
+    std::vector<Block> result;
+    if (const auto* list = p.properties["inventory"]["ready"].array())
+        for (const auto& v : *list) result.push_back(std::get<std::string>(v.data));
+    return result;
+}
 
 std::atomic<SDL_WindowID> window_id = 0;
 
@@ -54,56 +99,42 @@ int main(int argc, char** argv) {
         bool reach = argc >= 3 && std::string(argv[2]) == "reach";
         std::string content = argv[1], save = save_path.string();
         {
-            Settings settings;
-            settings.seed = 42;
-            settings.columns = 8; settings.rows = 4;
-            settings.terrain = load_terrain(std::filesystem::path(content) / "expedition");
-            Content blocks;
-            for (const auto& [id, version] : load_manifest(std::filesystem::path(content) / "flagship.json").packs)
-                blocks.load(std::filesystem::path(content) / id);
-            Save fixture(save_path);
-            auto folder = fixture.world(Save::starting_world);
-            folder.write_settings(settings);
-            World world(fixture, folder, blocks, settings);
+            Headless fixture(content, save_path);
+            auto& world = fixture.host.world();
             world.load(6, 23, 20, 31);
             for (int x = 6; x <= 20; ++x) {
                 for (int y = 23; y < 30; ++y) world.set(x, y, {});
                 for (int y : {30, 31}) world.set(x, y, "base:soil");
-                for (int y : {28, 29, 30}) world.set(x, y, "base:stone", Layer::background);
+                for (int y : {28, 29, 30}) world.set(x, y, "base:stone", 1);
             }
-            Player p;
-            p.world = Save::starting_world;
+            auto& p = fixture.host.player();
+            p.facing = 1;
             if (reach) {
-                p.x = 10.15; p.y = 29; p.selected = "workshop:pick";
-                p.inventory["workshop:pick"] = 1;
+                p.x = 10.15; p.y = 29; p.held = "workshop:pick";
+                carrying(p, {{"workshop:pick", 1}}, {});
                 for (int x = 9; x <= 13; ++x) world.set(x, 28, "base:stone");
             } else if (facing || crawl) {
-                p.x = 10.15; p.y = 29; p.selected = "base:soil";
-                p.inventory["base:soil"] = 3;
-                for (int x = 9; x <= 14; ++x) for (int y : {28, 29}) world.set(x, y, {}, Layer::background);
+                p.x = 10.15; p.y = 29; p.held = "base:soil";
+                carrying(p, {{"base:soil", 3}}, {});
+                for (int x = 9; x <= 14; ++x) for (int y : {28, 29}) world.set(x, y, {}, 1);
             } else if (reference) {
-                world.set(10, 29, {}, Layer::background);
-                p.x = 10.15; p.y = 29; p.selected = "base:soil";
-                p.inventory["base:soil"] = 3;
-                p.ready = {"base:soil"};
+                world.set(10, 29, {}, 1);
+                p.x = 10.15; p.y = 29; p.held = "base:soil";
+                carrying(p, {{"base:soil", 3}}, {"base:soil"});
             } else if (empty) {
                 p.x = 10.15; p.y = 29;
-                p.inventory["base:soil"] = 2;
-                p.inventory["workshop:pick"] = 0;
-                p.ready = {"workshop:pick"};
+                carrying(p, {{"base:soil", 2}, {"workshop:pick", 0}}, {"workshop:pick"});
             } else if (building) {
-                p.x = 10.15; p.y = 29; p.selected = "base:soil";
-                p.inventory["base:soil"] = 12;
-                p.ready = {"base:soil"};
+                p.x = 10.15; p.y = 29; p.held = "base:soil";
+                carrying(p, {{"base:soil", 12}}, {"base:soil"});
                 for (int x = 6; x <= 20; ++x)
-                    for (int y : {28, 29, 30}) world.set(x, y, {}, Layer::background);
+                    for (int y : {28, 29, 30}) world.set(x, y, {}, 1);
             } else {
-                world.set(10, 30, {}, Layer::background);
+                world.set(10, 30, {}, 1);
                 p.x = 10.15; p.y = 29;
-                p.inventory["base:timber"] = 2;
-                p.inventory["workshop:pick"] = 1;
+                carrying(p, {{"base:timber", 2}, {"workshop:pick", 1}}, {});
             }
-            world.save_changes(p);
+            fixture.host.save_changes();
         }
         std::string failure;
         require(SDL_Init(SDL_INIT_EVENTS), "initialize event observer");
@@ -212,56 +243,55 @@ int main(int argc, char** argv) {
         });
         std::vector<const char*> args{"desktop-test", "--content", content.c_str(), "--save-path", save.c_str()};
         if (argc >= 4) { args.push_back("--screenshot"); args.push_back(argv[3]); }
-        require(run(int(args.size()), args.data()) == 0, "desktop returned failure");
+        require(run(int(args.size()), args.data(), attach_modules) == 0, "desktop returned failure");
         input.join();
         require(failure.empty(), failure);
         {
-            Save result(save_path);
-            auto p = *result.player();
-            auto folder = result.world(p.world);
-            Content blocks;
-            blocks.load(std::filesystem::path(content) / "base");
-            World world(result, folder, blocks, *folder.settings());
+            Headless result(content, save_path);
+            auto& p = result.host.player();
+            auto& world = result.host.world();
+            auto count = [&](const Block& id) { return inventory::count(p, id); };
+            auto last_held = Field(p.properties["inventory"]["last_held"], "last_held").text_or("");
             world.load(6, 23, 20, 31);
             if (reach) {
                 require(world.block(10, 28).empty() && world.block(11, 28).empty() && world.block(12, 28) == "base:stone",
                         "W held digs the cell above the head, standing and while shuffling");
-                require(p.inventory.at("base:stone") == 2 && p.facing == 1, "letting go of W hands facing to the held D");
+                require(count("base:stone") == 2 && p.facing == 1, "letting go of W hands facing to the held D");
             } else if (facing) {
                 bool front = false, rear = false, dug = false;
                 for (int x = 10; x <= 14; ++x) {
                     front |= world.block(x, 29) == "base:soil";
-                    rear |= world.block(x, 29, Layer::background) == "base:soil";
-                    dug |= world.block(x, 30).empty() && world.block(x, 30, Layer::background) == "base:stone";
+                    rear |= world.block(x, 29, 1) == "base:soil";
+                    dug |= world.block(x, 30).empty() && world.block(x, 30, 1) == "base:stone";
                 }
                 require(front, "letting go of W hands facing to a held D");
                 require(rear, "letting go of W alone leaves the character facing the rear wall");
-                require(dug && p.inventory.at("base:soil") == 2, "S pressed while facing the wall turns sideways to crawl and aim beneath");
+                require(dug && count("base:soil") == 2, "S pressed while facing the wall turns sideways to crawl and aim beneath");
             } else if (crawl) {
                 require(world.block(10, 28) == "base:soil" && p.facing == 0,
                         "W pressed while crawling ends the crawl and reaches up");
             } else if (reference) {
-                require(world.block(11, 29).empty() && world.block(10, 29, Layer::background) == "base:soil",
+                require(world.block(11, 29).empty() && world.block(10, 29, 1) == "base:soil",
                         "only the rear placement in play reached the world; dialogs swallowed the others");
-                require(p.inventory.at("base:soil") == 2 && std::abs(p.x - 10.15) < 0.001, "browsing recipes neither moves nor spends");
+                require(count("base:soil") == 2 && std::abs(p.x - 10.15) < 0.001, "browsing recipes neither moves nor spends");
             } else if (empty) {
-                require(!p.inventory.contains("workshop:pick") && p.inventory.at("base:soil") == 2
-                            && p.ready == std::vector<Block>{"base:soil"} && p.selected.empty(),
+                require(count("workshop:pick") == 0 && count("base:soil") == 2
+                            && readied(p) == std::vector<Block>{"base:soil"} && p.held.empty(),
                         "a save's emptied entry and its readiness are dropped on load; only carried objects ready");
             } else if (building) {
                 require(world.block(10, 29) == "base:soil" && world.block(10, 28) == "base:soil", "SDL S+Space+L builds two scaffold cells without precise timing");
-                require(world.block(10, 27, Layer::background) == "base:soil", "standing on that scaffold reaches the rear wall above");
+                require(world.block(10, 27, 1) == "base:soil", "standing on that scaffold reaches the rear wall above");
                 require(world.block(11, 27) == "base:soil" && world.block(11, 28).empty() && world.block(10, 27).empty(),
                         "direct forward placement can hang in midair with no adjacent foreground blocks");
-                require(p.inventory.at("base:soil") == 8 && p.x < 9.5 && p.y >= 27 && p.facing == -1,
+                require(count("base:soil") == 8 && p.x < 9.5 && p.y >= 27 && p.facing == -1,
                         "held Place does not repeat; walking off after placing faces the way walked, with no remembered work-facing");
             } else {
-                require(world.block(10, 30).empty() && world.block(10, 30, Layer::background) == "base:soil", "keyboard gathering and facing-based rear placement change the intended layers");
+                require(world.block(10, 30).empty() && world.block(10, 30, 1) == "base:soil", "keyboard gathering and facing-based rear placement change the intended layers");
                 require(p.x > 10.35 && p.x < 11.2, "walking remains active while choosing");
-                require(!p.inventory.contains("base:soil") && p.inventory.at("base:timber") == 2 && p.inventory.at("workshop:pick") == 1,
+                require(count("base:soil") == 0 && count("base:timber") == 2 && count("workshop:pick") == 1,
                         "selection does not execute a newly equipped tool");
-                require(p.ready == std::vector<Block>{"base:timber", "workshop:pick"}, "the emptied soil left the ready marks; the others stay");
-                require(p.selected.empty() && p.last_selected == "workshop:pick", "hand transitions persist the last actual held object, not an unconfirmed choice");
+                require(readied(p) == std::vector<Block>{"base:timber", "workshop:pick"}, "the emptied soil left the ready marks; the others stay");
+                require(p.held.empty() && last_held == "workshop:pick", "hand transitions persist the last actual held object, not an unconfirmed choice");
             }
         }
         std::filesystem::remove_all(scratch);

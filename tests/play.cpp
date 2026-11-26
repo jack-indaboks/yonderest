@@ -95,7 +95,7 @@ struct Game {
         return false;
     }
     Action act(Act a) { return host.act(a); }
-    Ring ring() { return host.provided<Ring>().front(); }
+    Ring ring() { return *host.provided<Ring>(); }
     Block choice() {
         auto r = ring();
         return r.selected < r.entries.size() ? r.entries[r.selected].first : Block{};
@@ -166,13 +166,13 @@ void boundary_placement(Game& g) {
         g.p().facing = facing;
         g.carry("base:soil", 2);
         g.equip("base:soil");
-        auto result = g.act(Act::c);
-        require(result.ok, "placement at a tile boundary: " + result.message);
+        g.act(Act::c);
         require(g.w().block(expected, 29) == "base:soil" && g.count("base:soil") == 1,
                 "place beyond the facing edge, in a cell the body overlaps by no more than the margin, including at the seam");
         require(!g.intersects(g.p().x, g.p().y), "placement stays outside the character's body");
         g.host.intent("hand");
-        require(g.act(Act::a).ok && g.w().block(expected, 29).empty(), "gathering addresses that same cell in front of the body");
+        g.act(Act::a);
+        require(g.w().block(expected, 29).empty(), "gathering addresses that same cell in front of the body");
     }
     g.clear();
     g.standing();
@@ -182,7 +182,8 @@ void boundary_placement(Game& g) {
     g.equip("base:soil");
     p.y = 28;
     p.down = true;
-    require(g.act(Act::c).ok && g.w().block(10, 29) == "base:soil" && !g.intersects(p.x, p.y),
+    g.act(Act::c);
+    require(g.w().block(10, 29) == "base:soil" && !g.intersects(p.x, p.y),
             "downward placement uses the first clear cell below the feet even when upward motion has stopped");
 }
 
@@ -244,25 +245,33 @@ void actions(Game& g) {
     g.standing();
     auto& w = g.w();
     w.set(11, 29, "base:timber");
-    require(g.act(Act::a).ok && g.count("base:timber") == 1, "empty-hand J gathers a hand-gatherable block");
+    g.act(Act::a);
+    require(g.count("base:timber") == 1, "empty-hand J gathers a hand-gatherable block");
     w.set(11, 29, "workshop:workbench");
-    require(g.act(Act::b).ok && w.cell(11, 29).properties["crafting"]["batch"] == Value(5) && g.count("base:timber") == 1,
+    g.act(Act::b);
+    require(w.cell(11, 29).properties["crafting"]["batch"] == Value(5) && g.count("base:timber") == 1,
             "K interacts without gathering");
-    require(g.act(Act::a).ok && g.count("workshop:workbench") == 1, "J gathers the same station rather than interacting");
+    g.act(Act::a);
+    require(g.count("workshop:workbench") == 1, "J gathers the same station rather than interacting");
     w.set(11, 29, "expedition:copper_ore");
-    require(!g.act(Act::a).ok && w.block(11, 29) == "expedition:copper_ore", "ore requires a tool");
+    g.act(Act::a);
+    require(w.block(11, 29) == "expedition:copper_ore", "ore requires a tool");
     g.equip("base:timber");
-    require(!g.act(Act::a).ok, "a held building material does not inherit breaking");
+    g.act(Act::a);
+    require(w.block(11, 29) == "expedition:copper_ore" && g.notice == "Use empty hand or a tool", "a held building material does not inherit breaking");
     g.carry("workshop:pick", 1);
     g.equip("workshop:pick");
-    require(g.act(Act::a).ok && g.count("expedition:copper_ore") == 1, "breaking is the pick's primary action");
-    require(g.act(Act::c).ok && g.p().held.empty(), "L sets down that same tool and empties a depleted hand");
+    g.act(Act::a);
+    require(g.count("expedition:copper_ore") == 1, "breaking is the pick's primary action");
+    g.act(Act::c);
+    require(g.p().held.empty(), "L sets down that same tool and empties a depleted hand");
     require(!g.physics().solid(w.block(11, 29)) && w.block(11, 29) == "workshop:pick", "placed tool has its own shape and no collision");
     for (int i = 0; i < 25; ++i) g.move(1);
     require(g.p().x > 11 && !g.intersects(g.p().x, g.p().y), "the character can walk past a set-down tool");
     g.standing(11.15);
     w.set(12, 29, "base:timber");
-    require(g.act(Act::a).ok && g.count("workshop:pick") == 1 && w.block(11, 29).empty() && w.block(12, 29) == "base:timber",
+    g.act(Act::a);
+    require(g.count("workshop:pick") == 1 && w.block(11, 29).empty() && w.block(12, 29) == "base:timber",
             "J takes back what shares the character's own cell before the block in front");
 }
 
@@ -289,17 +298,21 @@ void forgiveness(Game& g) {
     g.move(0, true);
     g.tick(17);
     require(p.y + player_height > 28.1, "fixture: the feet are still a few pixels into the second row up");
-    require(g.act(Act::c).ok && w.block(10, 28) == "base:soil" && w.block(10, 29).empty() && !g.intersects(p.x, p.y),
+    g.act(Act::c);
+    require(w.block(10, 28) == "base:soil" && w.block(10, 29).empty() && !g.intersects(p.x, p.y),
             "a press a few pixels short of clearing two rows still builds two up, lifting the body clear");
     g.clear();
     g.standing();
     p.facing = 0; p.up = true;
     g.carry("base:soil", 3);
     g.equip("base:soil");
-    require(g.act(Act::c).ok && w.block(10, 28) == "base:soil", "W held roofs over the head");
-    require(!g.act(Act::a).ok, "a held block does not dig");
+    g.act(Act::c);
+    require(w.block(10, 28) == "base:soil", "W held roofs over the head");
+    g.act(Act::a);
+    require(w.block(10, 28) == "base:soil", "a held block does not dig");
     g.host.intent("hand");
-    require(g.act(Act::a).ok && w.block(10, 28).empty(), "W held digs straight up");
+    g.act(Act::a);
+    require(w.block(10, 28).empty(), "W held digs straight up");
 
     g.clear();
     g.standing();
@@ -313,10 +326,12 @@ void forgiveness(Game& g) {
     };
     g.clear(); w.set(11, 28, "base:stone");
     rising();
-    require(g.act(Act::a).ok && w.block(11, 28).empty(), "J in a jump takes the block in the other row the body overlaps when the aimed cell is empty");
+    g.act(Act::a);
+    require(w.block(11, 28).empty(), "J in a jump takes the block in the other row the body overlaps when the aimed cell is empty");
     g.clear(); w.set(11, 28, "base:stone"); w.set(11, 27, "base:stone");
     rising();
-    require(g.act(Act::a).ok && w.block(11, 27).empty() && !w.block(11, 28).empty(), "deliberate aim still wins when the aimed cell can be hit");
+    g.act(Act::a);
+    require(w.block(11, 27).empty() && !w.block(11, 28).empty(), "deliberate aim still wins when the aimed cell can be hit");
 }
 
 void belt(Game& g) {
@@ -352,7 +367,8 @@ void craft(Game& g) {
     g.carry("base:timber", 1);
     g.equip("base:timber");
     p.y = 28; // Facing the cell beneath the stones.
-    require(g.act(Act::c).ok && w.block(11, 28) == "workshop:pick", "the pick's shape completes in the world, from natural stone");
+    g.act(Act::c);
+    require(w.block(11, 28) == "workshop:pick", "the pick's shape completes in the world, from natural stone");
     require(g.count("workshop:pick") == 0 && g.notice == "Made Stone pick x1", "a single result is not also carried");
     g.clear();
     g.standing();
@@ -360,7 +376,8 @@ void craft(Game& g) {
     g.carry("base:timber", 1);
     g.equip("base:timber");
     p.y = 28;
-    require(g.act(Act::c).ok && w.block(10, 28) == "workshop:planks" && g.count("workshop:planks") == 3, "four planks: one in the world, three carried");
+    g.act(Act::c);
+    require(w.block(10, 28) == "workshop:planks" && g.count("workshop:planks") == 3, "four planks: one in the world, three carried");
     // A batch at a workbench: each placement takes five, and taking one back returns all five.
     g.clear();
     g.standing();
@@ -369,10 +386,12 @@ void craft(Game& g) {
     g.carry("base:timber", 12);
     g.equip("base:timber");
     p.y = 28;
-    require(g.act(Act::c).ok && w.cell(11, 28).properties["crafting"]["quantity"] == Value(5) && g.count("base:timber") == 7,
+    g.act(Act::c);
+    require(w.cell(11, 28).properties["crafting"]["quantity"] == Value(5) && g.count("base:timber") == 7,
             "a placement over a workbench set to five takes five");
     g.host.intent("hand");
-    require(g.act(Act::a).ok && g.count("base:timber") == 12, "taking an unfinished ingredient gives back all it stands for");
+    g.act(Act::a);
+    require(g.count("base:timber") == 12, "taking an unfinished ingredient gives back all it stands for");
 }
 
 void jump_building(Game& g) {
@@ -384,14 +403,14 @@ void jump_building(Game& g) {
     g.equip("base:soil");
     p.down = true;
     g.physics().jump();
-    require(g.act(Act::c).message == "Placement waits for clearance", "S held before Space+L buffers an early placement");
+    g.act(Act::c); // S held before Space+L buffers an early placement.
     g.move(0);
     require(w.block(10, 29).empty() && g.count("base:soil") == 10, "an overlapping request waits, without spending a block");
     g.tick(150);
     require(w.block(10, 29) == "base:soil" && g.count("base:soil") == 9, "one press places once when clear, never on every pending check");
     require(std::abs(p.y + player_height - 29) < 0.001, "jump-building lands on the new scaffold");
     g.physics().jump();
-    require(g.act(Act::c).ok, "the next distinct press can build the next scaffold block");
+    g.act(Act::c); // The next distinct press can build the next scaffold block.
     g.move(0);
     g.tick(150);
     require(w.block(10, 28) == "base:soil" && g.count("base:soil") == 8, "successive jumps make a usable pillar");
@@ -402,7 +421,8 @@ void jump_building(Game& g) {
     g.tick(57); // Descending, but with a whole clear cell beneath the feet.
     require(!g.physics().rising() && !g.physics().grounded(), "descent fixture");
     auto t = int(std::ceil(p.y + player_height - margin));
-    require(g.act(Act::c).ok && w.block(10, t) == "base:soil", "descent places in the first cell beneath the body, give or take the margin");
+    g.act(Act::c);
+    require(w.block(10, t) == "base:soil", "descent places in the first cell beneath the body, give or take the margin");
     require(!g.intersects(p.x, p.y), "late placement never embeds the character");
 
     g.clear(); g.standing(); g.carry("base:soil", 3); g.equip("base:soil");
@@ -421,13 +441,15 @@ void jump_building(Game& g) {
     g.clear(); g.standing(); g.carry("base:soil", 3); g.equip("base:soil");
     p.down = true; g.move(0, true); g.tick(40);
     int apex = int(std::ceil(p.y + player_height - 0.00001));
-    require(g.act(Act::c).ok && w.block(10, apex) == "base:soil",
+    g.act(Act::c);
+    require(w.block(10, apex) == "base:soil",
             "underfoot placement works near the apex without attachment or waiting for an unreachable higher row");
 
     g.clear(); g.standing(); g.carry("base:soil", 3); g.equip("base:soil");
     p.down = true; g.move(0, true); g.tick(73);
     require(!g.physics().rising() && p.y + player_height > 29, "near-landing fixture has less than a full empty cell beneath");
-    require(!g.act(Act::c).ok && g.count("base:soil") == 3,
+    g.act(Act::c);
+    require(g.count("base:soil") == 3,
             "a late press with less than one block of clearance cannot manufacture space or lift the player");
 
     // Ordinary airborne placement is immediate, never deferred to a later height.
@@ -435,10 +457,12 @@ void jump_building(Game& g) {
     g.move(0, true);
     for (int i = 0; i < 15; ++i) g.move(0);
     auto forward = g.host.target();
-    require(g.act(Act::c).ok && w.block(forward.x, forward.y) == "base:soil", "forward placement targets the row at the instant of the press");
+    g.act(Act::c);
+    require(w.block(forward.x, forward.y) == "base:soil", "forward placement targets the row at the instant of the press");
     p.facing = 0;
     auto rear = g.host.target();
-    require(g.act(Act::c).ok && w.block(rear.x, rear.y, 1) == "base:soil", "airborne rear-wall placement also uses its immediate target");
+    g.act(Act::c);
+    require(w.block(rear.x, rear.y, 1) == "base:soil", "airborne rear-wall placement also uses its immediate target");
 }
 
 void rear_wall(Game& g) {
@@ -451,7 +475,7 @@ void rear_wall(Game& g) {
     // A rear 2x2 timber wall must not transform into the foreground planks recipe.
     for (int y : {29, 28}) for (int x : {10, 11}) {
         p.x = x + 0.15; p.y = y; p.facing = 0;
-        require(g.act(Act::c).ok, "place a rear wall through the character's own column");
+        g.act(Act::c); // A rear wall through the character's own column.
     }
     require(g.count("base:timber") == 4 && g.count("workshop:planks") == 0, "rear-wall geometry does not craft");
     require(w.block(10, 29).empty() && w.block(10, 29, 1) == "base:timber", "layers have separate occupancy");
@@ -460,12 +484,14 @@ void rear_wall(Game& g) {
     require(p.x > 12 && p.y == 29, "rear walls never impede walking");
     g.standing();
     p.facing = 0;
-    require(g.act(Act::a).ok && g.count("base:timber") == 1 && w.block(10, 29, 1).empty(), "J gathers the addressed rear wall without touching foreground");
+    g.act(Act::a);
+    require(g.count("base:timber") == 1 && w.block(10, 29, 1).empty(), "J gathers the addressed rear wall without touching foreground");
     Cell bench{"workshop:workbench", {}};
     bench.properties.set("crafting", Value(Value::Object{{"batch", 5}}));
     w.put(10, 30, bench);
     g.equip("base:timber");
-    require(g.act(Act::c).ok && w.cell(10, 29, 1).properties.empty() && g.count("base:timber") == 0,
+    g.act(Act::c);
+    require(w.cell(10, 29, 1).properties.empty() && g.count("base:timber") == 0,
             "foreground workbench batching does not charge N for a single rear-wall block");
 }
 

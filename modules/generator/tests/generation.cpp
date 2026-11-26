@@ -29,11 +29,9 @@ void write(const std::filesystem::path& file, const std::string& text) {
 
 // The generator's own content: a pack with two layers and a terrain configuration.
 std::filesystem::path content(const std::filesystem::path& root) {
-    write(root / "flagship.json", R"({"version": 1, "packs": [{"id": "land", "version": 1}], "generator": {"terrain": "land"}})");
-    write(root / "land" / "module.json", R"({"id": "land", "version": 1})");
     write(root / "land" / "layers.json", R"(["foreground", "rear"])");
-    write(root / "land" / "terrain.json", R"({"generation": "expedition-1", "materials": {"grass": "land:grass", "soil": "land:soil",
-        "stone": "land:stone", "sand": "land:sand", "timber": "land:timber", "leaves": "land:leaves", "clay": "land:clay", "ore": "land:ore"}})");
+    write(root / "land" / "terrain.json", R"({"grass": "land:grass", "soil": "land:soil", "stone": "land:stone", "sand": "land:sand",
+        "timber": "land:timber", "leaves": "land:leaves", "clay": "land:clay", "ore": "land:ore"})");
     return root;
 }
 
@@ -183,9 +181,10 @@ void beginning(const std::filesystem::path& root, const std::filesystem::path& f
     game.host.start();
     auto& p = game.host.player();
     auto& world = game.host.world();
-    int row = game.host.generation->first_row();
-    require(int(p.y) / chunk_size == row && p.x > 0 && p.x < 1, "the player stands in column zero of the first chunk");
-    require(world.block(0, int(p.y)).empty() && !world.block(0, int(p.y) + 1).empty(), "on the ground, in open space");
+    int row = (int(p.y) + 1) / chunk_size;
+    require(p.x > 0 && p.x < 1 && world.block(0, int(p.y)).empty() && !world.block(0, int(p.y) + 1).empty(),
+            "the player stands on the ground in column zero");
+    for (int y = row * chunk_size; y <= int(p.y); ++y) require(world.block(0, y).empty(), "with open sky above");
     game.host.save_changes();
     game.host.save().worker.wait();
     int files = 0;

@@ -6,7 +6,6 @@
 #include "yonderest/host.hpp"
 
 #include <algorithm>
-#include <limits>
 #include <map>
 #include <vector>
 
@@ -28,9 +27,8 @@ Pack read(const Player& player) {
     pack.last_held = own["last_held"].text_or("");
     auto carried = own["carried"];
     for (const auto& id : carried.keys())
-        pack.carried[id] = carried[id.c_str()].integer(0, std::numeric_limits<std::int64_t>::max());
+        pack.carried[id] = carried[id.c_str()].integer();
     auto ready = own["ready"];
-    if (ready.size() > ring_size) ready.fail("can hold at most twelve objects");
     for (std::size_t i = 0; i < ready.size(); ++i) pack.ready.push_back(ready[i].text());
     return pack;
 }
@@ -116,8 +114,7 @@ public:
         if (found != pack.ready.end()) {
             pack.ready.erase(found);
             message = "Unreadied";
-        } else if (!pack.carried.contains(id)) message = "Not carried";
-        else if (pack.ready.size() == ring_size) message = "Twelve objects are already readied";
+        } else if (pack.ready.size() == ring_size) message = "Twelve objects are already readied";
         else {
             pack.ready.push_back(id);
             message = "Readied";
@@ -244,8 +241,7 @@ void attach(Host& host) {
     events.on<Action>([&inventory](Action& action) {
         if (!inventory.ring || action.act == Act::c) return;
         inventory.cycle(action.act == Act::a ? -1 : 1);
-        action.claimed = action.ok = true;
-        action.repeat = false;
+        action.claimed = true;
     });
     events.on<Back>([&inventory](Back& back) {
         if (!inventory.ring) return;

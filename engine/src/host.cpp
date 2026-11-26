@@ -2,6 +2,7 @@
 #include "platform.hpp"
 
 #include <algorithm>
+#include <charconv>
 #include <cstdlib>
 #include <iostream>
 #include <stdexcept>
@@ -17,6 +18,16 @@ std::optional<int> power_of_two(const std::string& text, int most) {
     int n = 0;
     try { n = std::stoi(text, &end); } catch (const std::exception&) { return std::nullopt; }
     if (end != text.size() || n < 1 || n > most || (n & (n - 1))) return std::nullopt;
+    return n;
+}
+
+// A whole number given for an option, refused by the option's name.
+template <class T>
+T number(const std::string& option, const std::string& value) {
+    T n{};
+    auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), n);
+    if (error != std::errc() || end != value.data() + value.size())
+        throw std::runtime_error(option + " takes a whole number: " + value);
     return n;
 }
 
@@ -77,9 +88,7 @@ Options parse_options(int argc, const char* const* argv) {
                       << starting_columns << 'x' << starting_rows << ").\n"
                          "                     Each is a power of two, up to " << max_columns << " around and " << max_rows << " tall.\n"
                          "  --seed NUMBER      A new save's seed\n"
-                         "  --content DIR      Content root (manifest and packs)\n"
-                         "  --manifest FILE    Pack and terrain configuration\n"
-                         "  --pack DIR         Additional content pack (repeatable)\n"
+                         "  --content DIR      Content root: the folder holding the packs\n"
                          "  --frames NUMBER    Exit after this many frames (render checks)\n"
                          "  --screenshot FILE  Save the last frame as BMP\n"
                          "  -h, --help         Show this help\n"
@@ -88,20 +97,12 @@ Options parse_options(int argc, const char* const* argv) {
         }
         if (i + 1 == argc) throw std::runtime_error("Missing value for " + arg);
         std::string value = argv[++i];
-        if (arg == "--save") {
-            if (value.empty() || value == "." || value == ".." || value.find('/') != std::string::npos)
-                throw std::runtime_error("--save takes a name; use --save-path for a folder: " + value);
-            o.name = value;
-        } else if (arg == "--save-path") o.path = value;
+        if (arg == "--save") o.name = value;
+        else if (arg == "--save-path") o.path = value;
         else if (arg == "--content") o.content = value;
-        else if (arg == "--manifest") o.manifest = value;
-        else if (arg == "--pack") o.packs.emplace_back(value);
         else if (arg == "--screenshot") o.screenshot = value;
-        else if (arg == "--seed") {
-            std::size_t end;
-            o.seed = std::stoull(value, &end);
-            if (end != value.size() || value.starts_with('-')) throw std::runtime_error("Invalid seed");
-        } else if (arg == "--size") {
+        else if (arg == "--seed") o.seed = number<std::uint64_t>(arg, value);
+        else if (arg == "--size") {
             auto x = value.find('x');
             auto around = x == std::string::npos ? std::nullopt : power_of_two(value.substr(0, x), max_columns);
             auto tall = x == std::string::npos ? std::nullopt : power_of_two(value.substr(x + 1), max_rows);
@@ -109,21 +110,15 @@ Options parse_options(int argc, const char* const* argv) {
                 throw std::runtime_error("--size takes AROUNDxTALL in chunks, each a power of two up to "
                                          + std::to_string(max_columns) + "x" + std::to_string(max_rows) + ": " + value);
             o.size = {*around, *tall};
-        } else if (arg == "--frames") {
-            std::size_t end;
-            o.frames = std::stoi(value, &end);
-            if (end != value.size() || o.frames <= 0) throw std::runtime_error("Invalid frame count");
-        } else throw std::runtime_error("Unknown option: " + arg);
+        } else if (arg == "--frames") o.frames = number<int>(arg, value);
+        else throw std::runtime_error("Unknown option: " + arg);
     }
-    if (!o.name.empty() && !o.path.empty()) throw std::runtime_error("Give --save or --save-path, not both");
     return o;
 }
 
 Host::Host(Options o) : options(std::move(o)), menu(std::make_unique<MainMenu>(*this)), pause(std::make_unique<Pause>(*this)) {
     if (options.content.empty()) options.content = program_folder() / "content";
-    content.load_flagship(options.content, options.manifest.empty() ? options.content / "flagship.json" : options.manifest);
-    for (const auto& pack : options.packs) content.load(pack);
-    content.validate();
+    content.load(options.content);
     events.on<Intent>([this](Intent& intent) {
         if (intent.name == "pause") open(*pause);
     });
@@ -132,15 +127,7 @@ Host::Host(Options o) : options(std::move(o)), menu(std::make_unique<MainMenu>(*
 Host::~Host() = default;
 
 void Host::start() {
-    if (!generation || !physics || !interaction) throw std::runtime_error("The game needs modules for generation, physics and interaction");
-    if (options.path.empty()) {
-        auto data = data_folder();
-        options.path = data / "saves" / (options.name.empty() ? default_save : options.name);
-        // Until 0.0.7 the one world lived beside the saves, where 0.0.6 can still open it.
-        if (!std::filesystem::exists(options.path) && std::filesystem::exists(data / "world" / "world.json"))
-            std::cout << "The world in " << (data / "world").string() << " is from Yonderest 0.0.6 or earlier"
-                         " and stays there; this version starts a new save.\n";
-    }
+    if (options.path.empty()) options.path = data_folder() / "saves" / (options.name.empty() ? default_save : options.name);
     saved = std::make_unique<Save>(options.path);
     auto saved_player = saved->player();
     folder = std::make_unique<WorldFolder>(saved->world(saved_player ? saved_player->world : Save::starting_world, content.layers));
@@ -151,7 +138,6 @@ void Host::start() {
         if (options.seed && *options.seed != settings.seed) std::cout << "Existing save: using its seed, not --seed.\n";
         if (options.size) std::cout << "Existing save: keeping its size, not --size.\n";
     } else {
-        if (saved_player) throw std::runtime_error("The player is in " + folder->folder.string() + ", which has no world.json");
         settings.seed = options.seed.value_or(std::uint64_t(std::chrono::system_clock::now().time_since_epoch().count()));
         if (options.size) std::tie(settings.columns, settings.rows) = *options.size;
         generation->create(settings);
@@ -160,28 +146,19 @@ void Host::start() {
     }
     generation->open(settings);
     opened = std::make_unique<World>(*saved, *folder, content, settings, *generation);
-    opened->changed = [this](int x, int y, Layer layer, const Cell& before) { events.announce(Changed{x, y, layer, before}); };
+    opened->changed = [this](int x, int y, Layer layer) { events.announce(Changed{x, y, layer}); };
     if (saved_player) you = std::move(*saved_player);
     else {
-        // A new player stands on the ground of the world's first chunk, in column zero.
-        int top = generation->first_row() * chunk_size;
-        opened->load(0, top, 0, top);
-        bool placed = false;
-        for (int x = 0; x < chunk_size && !placed; ++x)
-            for (int y = top; y < top + chunk_size - 1 && !placed; ++y)
-                if (opened->block(x, y).empty() && physics->solid(opened->block(x, y + 1))) {
-                    you.x = x + 0.15; // The body's centre over the cell's.
-                    you.y = y;
-                    placed = true;
-                }
-        if (!placed) throw std::runtime_error("No place to stand in the world's first chunk");
+        // A new player starts where the generator says, on the ground of the world's first chunk.
+        auto first = generation->begin();
+        opened->keep(0, first.row, std::move(first.chunk));
+        you.x = first.x + 0.15; // The body's centre over the cell's.
+        you.y = first.y;
     }
     you.world = folder->folder.filename().string();
     std::cout << "Save: " << options.path.string() << "\nWorld: " << you.world << ", " << settings.columns << " chunks around and "
               << settings.rows << " tall\nSeed: " << settings.seed << '\n';
     events.announce(Started{fresh});
-    // What modules settled on loading, such as an emptied entry, is not a change to write back.
-    if (saved_player) saved->settle_player(you);
 }
 
 Target Host::target() const {
@@ -198,8 +175,8 @@ Action Host::act(Act which) {
     return action;
 }
 
-Intent Host::intent(std::string_view name) {
-    return events.announce(Intent{name});
+void Host::intent(std::string_view name) {
+    events.announce(Intent{name});
 }
 
 void Host::hold(const Block& block) {
@@ -250,7 +227,6 @@ double Host::now() const {
 }
 
 int Host::run() {
-    if (!display || !controls) throw std::runtime_error("The game needs modules for the display and controls");
     double previous = now(), last_save = previous;
     display->begin();
     int frames = 0;

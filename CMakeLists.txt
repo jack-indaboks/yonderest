@@ -4,13 +4,15 @@ project(yonderest LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+add_compile_options(-Wall -Wextra -Wpedantic)
 include(CTest)
 
 add_subdirectory(engine)
 
 # The flagship's modules with code, attached in this order: a module's hooks run before those of
-# modules attached after it.
+# modules attached after it. Its packs are modules without code: data, and the display's art.
 set(modules physics interaction inventory crafting generator controls display)
+set(packs base expedition workshop art)
 foreach(module ${modules})
     add_subdirectory(modules/${module})
 endforeach()
@@ -32,21 +34,11 @@ endforeach()
 add_executable(yonderest)
 target_link_libraries(yonderest PRIVATE yonderest-engine-main yonderest-modules)
 
-# The game's content, beside the program: the manifest and each pack it names.
+# The game's content, beside the program: a folder of packs.
 # The build's copy is a mirror of the source tree: deletions carry over too.
-file(READ flagship.json manifest)
-string(JSON pack_count LENGTH ${manifest} packs)
-math(EXPR last_pack "${pack_count} - 1")
-set(packs "")
-foreach(i RANGE ${last_pack})
-    string(JSON pack GET ${manifest} packs ${i} id)
-    list(APPEND packs ${pack})
-endforeach()
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/flagship.json)
 set(content ${CMAKE_CURRENT_BINARY_DIR}/content)
-set(content_files ${CMAKE_CURRENT_SOURCE_DIR}/flagship.json)
-set(mirror COMMAND ${CMAKE_COMMAND} -E rm -rf ${content}
-    COMMAND ${CMAKE_COMMAND} -E copy ${CMAKE_CURRENT_SOURCE_DIR}/flagship.json ${content}/flagship.json)
+set(content_files "")
+set(mirror COMMAND ${CMAKE_COMMAND} -E rm -rf ${content})
 foreach(pack ${packs})
     file(GLOB_RECURSE files CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/modules/${pack}/*)
     list(APPEND content_files ${files})
@@ -81,29 +73,6 @@ if(BUILD_TESTING)
         endif()
         add_test(NAME ${name} COMMAND desktop-test ${content} ${scenario})
         set_tests_properties(${name} PROPERTIES TIMEOUT 20 ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_RENDER_DRIVER=software")
-    endforeach()
-
-    # The build refuses what crosses a module's boundary: an undeclared module, SDL outside the
-    # display and controls, JSON outside the engine. Each probe is built as the module it names.
-    foreach(probe "physics|yonderest/inventory.hpp|yonderest/inventory.hpp: No such file"
-                  "crafting|SDL3/SDL.h|SDL belongs to the display and the controls"
-                  "engine|SDL3/SDL_events.h|SDL belongs to the display and the controls"
-                  "generator|json/value.h|JSON is read and written by the engine alone")
-        string(REPLACE "|" ";" probe "${probe}")
-        list(GET probe 0 module)
-        list(GET probe 1 header)
-        list(GET probe 2 expected)
-        string(MAKE_C_IDENTIFIER "${module}-${header}" id)
-        file(CONFIGURE OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/probes/${id}.cpp CONTENT "#include <${header}>\n")
-        add_library(probe-${id} OBJECT EXCLUDE_FROM_ALL ${CMAKE_CURRENT_BINARY_DIR}/probes/${id}.cpp)
-        # The module's own include path, fences included, and the modules it links.
-        get_target_property(own yonderest-${module} INCLUDE_DIRECTORIES)
-        get_target_property(links yonderest-${module} LINK_LIBRARIES)
-        list(FILTER links INCLUDE REGEX "^yonderest-")
-        set_target_properties(probe-${id} PROPERTIES INCLUDE_DIRECTORIES "${own}")
-        target_link_libraries(probe-${id} PRIVATE ${links})
-        add_test(NAME boundary-${id} COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target probe-${id})
-        set_tests_properties(boundary-${id} PROPERTIES PASS_REGULAR_EXPRESSION "${expected}")
     endforeach()
 endif()
 

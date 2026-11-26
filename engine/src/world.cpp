@@ -97,13 +97,10 @@ void World::set(int x, int y, const Block& id, Layer layer) {
 
 void World::put(int x, int y, const Cell& value, Layer layer) {
     auto* c = loaded(x, y);
-    if (!c) throw std::logic_error("Changing a cell of a chunk that is not loaded");
     x = wrap(x, settings.width());
-    auto& cell = c->at(x % chunk_size, y % chunk_size, layer);
-    Cell before = std::move(cell);
-    cell = value;
+    c->at(x % chunk_size, y % chunk_size, layer) = value;
     c->dirty = true;
-    if (changed) changed(x, y, layer, before);
+    if (changed) changed(x, y, layer);
 }
 
 void World::retain(int left, int top, int right, int bottom) {
@@ -146,6 +143,12 @@ void World::load(int left, int top, int right, int bottom) {
             if (!chunks.contains({wrap(x, settings.columns), y})) request(wrap(x, settings.columns), y);
     save.worker.wait();
     receive();
+}
+
+void World::keep(int cx, int cy, Chunk chunk) {
+    chunk.dirty = true;
+    save.worker.post([this, key = Key{cx, cy}, copy = std::make_shared<const Chunk>(chunk)] { known[key] = copy; });
+    chunks.insert_or_assign({cx, cy}, std::move(chunk));
 }
 
 bool World::save_changes() {

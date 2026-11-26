@@ -21,9 +21,6 @@ struct Action {
     Target cell;
     Block held;
     bool claimed = false;
-    bool ok = false;
-    std::string message{};
-    bool repeat = true; // Holding the action's key repeats it, unless a layer says otherwise.
     bool stopped() const { return claimed; }
 };
 
@@ -52,9 +49,6 @@ struct Placed {
 
 // Before a block is taken: how many it gives.
 struct Taking {
-    Player& player;
-    int x, y;
-    Layer layer;
     const Cell& cell;
     int count = 1;
 };
@@ -69,7 +63,6 @@ struct Taken {
 struct Changed {
     int x, y;
     Layer layer;
-    const Cell& before;
 };
 
 // After the held block was set, even to what it already was.

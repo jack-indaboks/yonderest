@@ -1,4 +1,5 @@
-yonderest_module()
+add_library(yonderest-generator STATIC src/generator.cpp)
+target_link_libraries(yonderest-generator PUBLIC yonderest-engine)
 
 if(BUILD_TESTING)
     add_executable(generator-test tests/generation.cpp)

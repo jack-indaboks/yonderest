@@ -19,8 +19,14 @@ namespace {
 
 constexpr int screen_width = 640, screen_height = 360, tile = 16;
 
+// A failed SDL call returns false or null and carries on; this makes it stop the game.
 void sdl(bool result) {
     if (!result) throw std::runtime_error(SDL_GetError());
+}
+template <class T>
+T* sdl(T* made) {
+    if (!made) throw std::runtime_error(SDL_GetError());
+    return made;
 }
 
 struct Rect {
@@ -134,8 +140,8 @@ public:
             } else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT) {
                 press(event.button.x, event.button.y, event.button.clicks);
             } else if (event.type == SDL_EVENT_MOUSE_WHEEL && !host.screen()) {
-                auto book = first<Book>();
-                if (book && book->open && book->any && book_layout.book.contains(event.wheel.mouse_x, event.wheel.mouse_y))
+                auto book = host.provided<Book>();
+                if (book && book->open && book_layout.book.contains(event.wheel.mouse_x, event.wheel.mouse_y))
                     book->browse(event.wheel.y > 0 ? -1 : 1);
             } else if (event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP) {
                 host.controls->key({int(event.key.key), event.type == SDL_EVENT_KEY_DOWN, event.key.repeat});
@@ -147,12 +153,12 @@ public:
         follow();
         std::erase_if(crafts, [&](const Craft& c) { return now - c.start >= craft_seconds; });
         scene(now);
-        auto book = first<Book>();
-        auto bag = first<Bag>();
+        auto book = host.provided<Book>();
+        auto bag = host.provided<Bag>();
         std::optional<View> view;
         if (auto* screen = host.screen()) view = screen->view();
         bool backpack = view && std::holds_alternative<Backpack>(*view);
-        bool book_shown = book && book->open && book->any && !backpack;
+        bool book_shown = book && book->open && !backpack;
         if (book_shown) draw_book(*book);
         hud(book_shown, bag && bag->open);
         if (view) {
@@ -165,11 +171,10 @@ public:
     }
 
     void capture(const std::filesystem::path& path) override {
-        SDL_Surface* pixels = SDL_RenderReadPixels(renderer, nullptr);
-        if (!pixels) throw std::runtime_error(SDL_GetError());
-        bool result = SDL_SaveBMP(pixels, path.c_str());
+        SDL_Surface* pixels = sdl(SDL_RenderReadPixels(renderer, nullptr));
+        bool saved = SDL_SaveBMP(pixels, path.c_str());
         SDL_DestroySurface(pixels);
-        sdl(result);
+        sdl(saved);
     }
 
     void present() override {
@@ -206,13 +211,6 @@ private:
     SDL_Texture *recipes_icon = nullptr, *backpack_icon = nullptr, *hand_icon = nullptr;
     std::array<int, 128> advance{};
 
-    template <class T>
-    std::optional<T> first() const {
-        auto all = host.provided<T>();
-        if (all.empty()) return std::nullopt;
-        return std::move(all.front());
-    }
-
     // A block's art is blocks/<namespace>/<name>.png, and held/<namespace>/<name>.png when it is
     // drawn in the character's hand rather than as a carried block.
     static std::filesystem::path art(const Block& id) {
@@ -232,15 +230,9 @@ private:
             }
             if (std::filesystem::exists(pack / "character.json")) read_poses(Field(read_json(pack / "character.json"), (pack / "character.json").string()));
         }
-        auto image_named = [&](const std::string& name) {
-            auto found = named.find(name);
-            if (found == named.end()) throw std::runtime_error("Missing image: " + name);
-            return found->second;
-        };
+        auto image_named = [&](const std::string& name) { return named.at(name); };
         for (const char* name : {"idle", "stride", "jump", "fall", "crawl-1", "crawl-2", "leapfrog", "back", "back-2", "strike-up"}) {
-            auto found = pose_specs.find(name);
-            if (found == pose_specs.end()) throw std::runtime_error(std::string("Missing pose: ") + name);
-            const auto& pose = found->second;
+            const auto& pose = pose_specs.at(name);
             poses[name] = {&pose, canvas(image_named(pose.image)), canvas(image_named(pose.bare.empty() ? pose.image : pose.bare))};
         }
         grip = canvas(image_named("character-grip"));
@@ -263,8 +255,7 @@ private:
             advance[code] = last + 1;
         }
         advance[' '] = 3;
-        entry = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, ring_entry, ring_entry);
-        if (!entry) throw std::runtime_error(SDL_GetError());
+        entry = sdl(SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, ring_entry, ring_entry));
         SDL_SetTextureScaleMode(entry, SDL_SCALEMODE_NEAREST);
         SDL_SetTextureBlendMode(entry, SDL_BLENDMODE_BLEND);
     }
@@ -273,7 +264,7 @@ private:
         auto list = file["poses"];
         for (const auto& name : list.keys()) {
             auto entry = list[name.c_str()];
-            auto pixel = [](const Field& f) { return int(f.integer(0, 15)); };
+            auto pixel = [](const Field& f) { return int(f.integer()); };
             Pose p;
             p.image = entry["image"].text();
             p.bare = entry["bare"].text_or("");
@@ -284,15 +275,14 @@ private:
             auto block = entry["block"];
             p.block_x = block.present() ? pixel(block["x"]) : p.hand_x + 1;
             p.block_y = block.present() ? pixel(block["y"]) : p.hand_y - 3;
-            if (p.block_x > 15 || p.block_y < 0) entry.fail("needs a block position: the default beside the hand is off the canvas");
             pose_specs[name] = p;
         }
     }
 
     // The pointer operates interface controls only, never the world.
     void press(float x, float y, int clicks) {
-        auto bag = first<Bag>();
-        auto book = first<Book>();
+        auto bag = host.provided<Bag>();
+        auto book = host.provided<Book>();
         if (auto* screen = host.screen()) {
             auto view = screen->view();
             if (auto* menu = std::get_if<Menu>(&view)) {
@@ -306,7 +296,7 @@ private:
                 if (backpack_button.contains(x, y) && bag) bag->toggle();
             } else screen->command("back");
         } else if (backpack_button.contains(x, y) && bag) bag->toggle();
-        else if (book && book->open && book->any && book_layout.book.contains(x, y)) {
+        else if (book && book->open && book_layout.book.contains(x, y)) {
             // Turn a page at its corner; anywhere else on the book closes it.
             if (book_layout.previous.contains(x, y)) book->browse(-1);
             else if (book_layout.next.contains(x, y)) book->browse(1);
@@ -398,7 +388,7 @@ private:
         auto& world = host.world();
         const auto& p = host.player();
         // Open sky above ground; depth darkens the backdrop rather than inventing scenery.
-        auto behind = first<Backdrop>();
+        auto behind = host.provided<Backdrop>();
         double daylight = behind ? behind->daylight : 1;
         for (int y = 0; y < screen_height; y += 4)
             fill({0, y, screen_width, 4}, {Uint8((96 + y / 6) * daylight + 10), Uint8((150 + y / 6) * daylight + 10), Uint8((196 + y / 10) * daylight + 18)});
@@ -418,7 +408,7 @@ private:
                 }
             }
         }
-        auto labels = host.provided<Label>();
+        auto label = host.provided<Label>();
         int left = int(std::floor(camera_x / double(tile))), top = int(std::floor(camera_y / double(tile)));
         // Back to front; layers behind the front are shaded.
         for (Layer layer = Layer(host.content.layers.size()) - 1; layer >= 0; --layer)
@@ -434,12 +424,12 @@ private:
                     if (layer == 0 && transform(now, wx, y, sx, sy)) continue;
                     if (cell.id.empty()) continue;
                     block(cell.id, sx, sy, layer > 0 ? Color{132, 128, 150} : Color{255, 255, 255});
-                    for (const auto& label : labels)
-                        if (auto shown = label.text(cell); !shown.empty())
+                    if (label)
+                        if (auto shown = label->text(cell); !shown.empty())
                             text(sx + tile - measure(shown), sy + tile - 8, shown, gold, true);
                 }
         character(p, pose_for(p, now < swing_until), now < swing_until);
-        if (auto ring = first<Ring>(); ring && ring->open) chooser(p, *ring);
+        if (auto ring = host.provided<Ring>(); ring && ring->open) chooser(p, *ring);
     }
 
     // A completed recipe resolves in place: its ingredients dissolve into light, which settles
@@ -697,20 +687,14 @@ private:
         if (found != images.end()) return found->second.texture;
         SDL_Surface* loaded = SDL_LoadPNG(path.c_str());
         if (!loaded) throw std::runtime_error(path.string() + ": " + SDL_GetError());
-        SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, loaded);
-        if (!texture) throw std::runtime_error(SDL_GetError());
+        SDL_Texture* texture = sdl(SDL_CreateTextureFromSurface(renderer, loaded));
         SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
         images.emplace(path, Image{loaded, texture});
         return texture;
     }
 
     // Character art: a 16x16 canvas.
-    SDL_Texture* canvas(const std::filesystem::path& path) {
-        auto* texture = image(path);
-        const auto* art = images.at(path).surface;
-        if (art->w != tile || art->h != tile) throw std::runtime_error(path.string() + ": character art must be 16x16");
-        return texture;
-    }
+    SDL_Texture* canvas(const std::filesystem::path& path) { return image(path); }
 
     // A swing: the held art turned a quarter about the knuckle, one pixel up and forward of the
     // idle hand, clockwise (1) or counterclockwise (-1). Pixel-exact, so any tool swings without
@@ -720,8 +704,7 @@ private:
         if (found != turns.end()) return found->second;
         canvas(held);
         SDL_Surface* source = images.at(held).surface;
-        SDL_Surface* out = SDL_CreateSurface(2 * tile, 2 * tile, SDL_PIXELFORMAT_RGBA32);
-        if (!out) throw std::runtime_error(SDL_GetError());
+        SDL_Surface* out = sdl(SDL_CreateSurface(2 * tile, 2 * tile, SDL_PIXELFORMAT_RGBA32));
         SDL_ClearSurface(out, 0, 0, 0, 0);
         int kx = idle.hand_x + 1, ky = idle.hand_y - 1, o = tile / 2;
         for (int y = 0; y < tile; ++y)
@@ -730,9 +713,8 @@ private:
                 SDL_ReadSurfacePixel(source, x, y, &r, &g, &b, &a);
                 if (a) SDL_WriteSurfacePixel(out, o + kx - way * (y - ky), o + ky + way * (x - kx), r, g, b, a);
             }
-        SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, out);
+        SDL_Texture* texture = sdl(SDL_CreateTextureFromSurface(renderer, out));
         SDL_DestroySurface(out);
-        if (!texture) throw std::runtime_error(SDL_GetError());
         SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
         return turns.emplace(std::pair{held, way}, texture).first->second;
     }
@@ -743,8 +725,7 @@ private:
         constexpr int size = 8, inner = size - 2;
         auto found = carried.find(id);
         if (found != carried.end()) return found->second;
-        SDL_Surface* small = SDL_CreateSurface(size, size, SDL_PIXELFORMAT_RGBA32);
-        if (!small) throw std::runtime_error(SDL_GetError());
+        SDL_Surface* small = sdl(SDL_CreateSurface(size, size, SDL_PIXELFORMAT_RGBA32));
         SDL_Surface* source = surface(id);
         for (int y = 0; y < size; ++y)
             for (int x = 0; x < size; ++x) {
@@ -758,9 +739,8 @@ private:
                 }
                 SDL_WriteSurfacePixel(small, x, y, r, g, b, a);
             }
-        SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, small);
+        SDL_Texture* texture = sdl(SDL_CreateTextureFromSurface(renderer, small));
         SDL_DestroySurface(small);
-        if (!texture) throw std::runtime_error(SDL_GetError());
         SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
         return carried.emplace(id, texture).first->second;
     }

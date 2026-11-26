@@ -13,10 +13,8 @@ std::filesystem::path program_folder() {
 }
 
 std::filesystem::path data_folder() {
-    std::filesystem::path base;
-    if (const char* xdg = std::getenv("XDG_DATA_HOME"); xdg && *xdg) base = xdg;
-    else if (const char* home = std::getenv("HOME"); home && *home) base = std::filesystem::path(home) / ".local" / "share";
-    else throw std::runtime_error("Neither XDG_DATA_HOME nor HOME is set");
+    const char* xdg = std::getenv("XDG_DATA_HOME");
+    auto base = xdg && *xdg ? std::filesystem::path(xdg) : std::filesystem::path(std::getenv("HOME")) / ".local" / "share";
     auto folder = base / "yonderest";
     std::filesystem::create_directories(folder);
     return folder;

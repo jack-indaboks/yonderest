@@ -74,8 +74,7 @@ struct Book {
     };
     bool open;
     std::function<void()> toggle;
-    // The page, if there is one.
-    bool any = false;
+    // The page it is open at.
     Block output{};
     int amount = 1, width = 0, height = 0;
     std::vector<Cell> shape{};

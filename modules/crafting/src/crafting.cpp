@@ -7,7 +7,6 @@
 #include "yonderest/inventory.hpp"
 
 #include <algorithm>
-#include <limits>
 #include <map>
 #include <set>
 
@@ -41,7 +40,7 @@ struct Assembly {
 // A cell's quantity, for an unfinished ingredient standing for a whole batch, and a workbench's batch.
 int property(const Cell& cell, const char* name) {
     if (cell.properties.empty()) return 1;
-    return int(Field(cell.properties["crafting"][name], std::string("crafting.") + name).integer_or(1, 1, std::numeric_limits<int>::max()));
+    return int(Field(cell.properties["crafting"][name], std::string("crafting.") + name).integer_or(1));
 }
 
 Cell with(Cell cell, const char* name, int value) {
@@ -60,13 +59,6 @@ public:
             if (a.shape.size() != b.shape.size()) return a.shape.size() > b.shape.size();
             return a.id < b.id;
         });
-        std::set<std::string> ids;
-        for (const auto& r : recipes) {
-            if (!ids.insert(r.id).second) throw std::runtime_error("Duplicate recipe: " + r.id);
-            if (!host.content.defined(r.output)) throw std::runtime_error("Undefined recipe output: " + r.output);
-            for (const auto& i : r.shape)
-                if (!i.id.empty() && !host.content.defined(i.id)) throw std::runtime_error("Undefined recipe ingredient: " + i.id);
-        }
         for (const auto& [id, definition] : host.content.blocks) {
             auto station = Field(definition.properties["crafting"]["station"], id + ".crafting.station").text_or("");
             if (!station.empty()) stations[id] = station;
@@ -146,9 +138,7 @@ public:
 
     Book shown() {
         Book view{.open = open, .toggle = [this] { open = !open; }};
-        if (book.empty()) return view;
         const auto& r = *book[page];
-        view.any = true;
         view.output = r.output;
         view.amount = r.amount;
         view.width = r.width;
@@ -170,7 +160,7 @@ public:
     }
 
     void browse(int pages) {
-        if (!book.empty()) page = wrap(page + pages, int(book.size()));
+        page = wrap(page + pages, int(book.size()));
     }
 
 private:
@@ -180,9 +170,9 @@ private:
             Recipe r;
             r.id = entry["id"].text();
             auto output = entry["output"];
-            auto coordinate = [](const Field& f) { return int(f.integer(0, 255)); };
+            auto coordinate = [](const Field& f) { return int(f.integer()); };
             r.output = output["block"].text();
-            r.amount = int(output["count"].integer_or(1, 1, 1000000));
+            r.amount = int(output["count"].integer_or(1));
             r.output_x = coordinate(output["x"]);
             r.output_y = coordinate(output["y"]);
             // Rows run down and cells run right. A block ID is an ingredient; null must stay empty.
@@ -191,16 +181,11 @@ private:
                 for (std::size_t x = 0; x < rows[y].size(); ++x) {
                     auto cell = rows[y][x];
                     r.shape.push_back({int(x), int(y), cell.present() ? cell.text() : Block{}});
-                    if (cell.present() && r.shape.back().id.empty()) cell.fail("must name a block, or be null for an empty cell");
                     r.width = std::max(r.width, int(x) + 1);
                     r.height = std::max(r.height, int(y) + 1);
                 }
             auto stations = entry["stations"];
             for (std::size_t i = 0; i < stations.size(); ++i) r.stations.push_back(stations[i].text());
-            bool output_in_ingredients = std::ranges::any_of(r.shape, [&](const Ingredient& i) {
-                return i.x == r.output_x && i.y == r.output_y && !i.id.empty();
-            });
-            if (!output_in_ingredients) entry.fail("output must replace an ingredient: " + r.id);
             r.order = int(recipes.size());
             recipes.push_back(r);
         }
@@ -210,7 +195,7 @@ private:
     // Nothing is consumed or reserved until the complete shape matches.
     std::optional<Assembly> assembly(const Recipe& r, int x, int y, bool complete) {
         auto& world = host.world();
-        if (r.width > world.settings.width() || y < 0 || y + r.height > world.settings.height()) return {};
+        if (y < 0 || y + r.height > world.settings.height()) return {};
         Assembly a;
         for (const auto& i : r.shape) {
             const auto& cell = world.cell(x + i.x, y + i.y);
@@ -282,7 +267,7 @@ void attach(Host& host) {
     });
     events.on<Action>([&crafting](Action& action) {
         if (action.act != Act::b || !crafting.use(action.cell)) return;
-        action.claimed = action.ok = true;
+        action.claimed = true;
     });
     events.on<Intent>([&crafting](Intent& intent) {
         if (intent.name == "recipes") crafting.open = intent.show || !crafting.open;

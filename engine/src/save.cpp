@@ -1,10 +1,9 @@
 #include "yonderest/save.hpp"
 #include "json.hpp"
 #include "platform.hpp"
+#include "yonderest/content.hpp"
 
 #include <algorithm>
-#include <limits>
-#include <stdexcept>
 
 namespace yonder {
 
@@ -87,13 +86,13 @@ bool empty(const Cells& layer) {
 std::optional<Settings> WorldFolder::settings() const {
     auto path = folder / "world.json";
     if (!std::filesystem::exists(path)) return std::nullopt;
-    JsonFile file(path);
-    auto root = file.root();
+    auto file = read_json(path);
+    Field root(file, path.string());
     Settings s;
     s.seed = root["seed"].whole();
-    s.columns = int(root["columns"].integer(1, max_columns));
-    s.rows = int(root["rows"].integer(1, max_rows));
-    s.properties = file.rest(root, {"seed", "columns", "rows"});
+    s.columns = int(root["columns"].integer());
+    s.rows = int(root["rows"].integer());
+    s.properties = rest(file, {"seed", "columns", "rows"});
     return s;
 }
 
@@ -110,8 +109,8 @@ void WorldFolder::write_settings(const Settings& s) const {
 std::optional<Chunk> WorldFolder::chunk(int x, int y) const {
     auto path = chunk_file(folder, x, y);
     if (!std::filesystem::exists(path)) return std::nullopt;
-    JsonFile file(path);
-    auto root = file.root();
+    auto file = read_json(path);
+    Field root(file, path.string());
     Chunk c(layers.size());
     std::vector<Cell> palette;
     auto entries = root["palette"];
@@ -120,8 +119,7 @@ std::optional<Chunk> WorldFolder::chunk(int x, int y) const {
         Cell cell;
         if (entry.present()) {
             cell.id = entry["block"].text();
-            if (cell.id.empty()) entry["block"].fail("must name a block; empty space is null");
-            cell.properties = file.rest(entry, {"block"});
+            cell.properties = rest(entry.value(), {"block"});
         }
         palette.push_back(cell);
     }
@@ -130,19 +128,17 @@ std::optional<Chunk> WorldFolder::chunk(int x, int y) const {
         known.push_back(layers[l]);
         auto rows = root[layers[l].c_str()];
         if (!rows.present()) continue;
-        if (rows.size() != chunk_size) rows.fail("must have " + std::to_string(chunk_size) + " rows");
-        for (std::size_t ly = 0; ly < chunk_size; ++ly) {
-            auto row = rows[ly];
-            if (row.size() != chunk_size) row.fail("must have " + std::to_string(chunk_size) + " cells");
-            for (std::size_t lx = 0; lx < chunk_size; ++lx)
-                c.layers[l][ly * chunk_size + lx] = palette[row[lx].integer(0, std::int64_t(palette.size()) - 1)];
-        }
+        for (std::size_t ly = 0; ly < chunk_size; ++ly)
+            for (std::size_t lx = 0; lx < chunk_size; ++lx) {
+                auto index = rows[ly][lx];
+                auto i = std::size_t(index.integer());
+                if (i >= palette.size()) index.fail("is not in the palette");
+                c.layers[l][ly * chunk_size + lx] = palette[i];
+            }
     }
     // Everything else belongs to modules, such as the generator's own record of the chunk.
-    Properties rest;
-    for (auto& group : file.rest(root, {}).groups)
-        if (std::ranges::find(known, group.name) == known.end()) rest.groups.push_back(std::move(group));
-    c.properties = std::move(rest);
+    c.properties = rest(file, {});
+    std::erase_if(c.properties.groups, [&](const auto& group) { return std::ranges::find(known, group.first) != known.end(); });
     return c;
 }
 
@@ -186,16 +182,6 @@ void WorldFolder::write_chunk(int x, int y, const Chunk& c) const {
 }
 
 Save::Save(const std::filesystem::path& folder) : folder(folder) {
-    if (std::filesystem::exists(folder) && !std::filesystem::is_directory(folder))
-        throw std::runtime_error(folder.string() + " is not a save folder");
-    // Before 0.0.7 a save was a single world folder, with its chunks at 32 blocks.
-    if (std::filesystem::exists(folder / "world.json")) {
-        if (std::filesystem::exists(folder / "chunks"))
-            throw std::runtime_error(folder.string() + " is a world from Yonderest 0.0.6 or earlier, which this version cannot open."
-                                     " Version 0.0.6 still can.");
-        throw std::runtime_error(folder.string() + " is a world inside a save; open the save that holds it, "
-                                 + folder.parent_path().string());
-    }
     std::filesystem::create_directories(folder);
     lock = lock_folder(folder);
 }
@@ -206,8 +192,6 @@ Save::~Save() {
 }
 
 WorldFolder Save::world(const std::string& name, std::vector<std::string> layers) const {
-    if (name.empty() || name == "." || name == ".." || name.find('/') != std::string::npos)
-        throw std::runtime_error("Not a world name: " + name);
     return WorldFolder(folder / name, std::move(layers));
 }
 
@@ -215,25 +199,18 @@ WorldFolder Save::world(const std::string& name, std::vector<std::string> layers
 std::optional<Player> Save::player() {
     auto path = folder / "player.json";
     if (!std::filesystem::exists(path)) return std::nullopt;
-    JsonFile file(path);
-    auto root = file.root();
+    auto file = read_json(path);
+    Field root(file, path.string());
     Player p;
     p.world = root["world"].text_or(starting_world);
     p.x = root["x"].number();
     p.y = root["y"].number();
     auto facing = root["facing"].text_or("right");
-    if (facing == "left") p.facing = -1;
-    else if (facing == "rear") p.facing = 0;
-    else if (facing == "right") p.facing = 1;
-    else root["facing"].fail("must be left, right or rear");
+    p.facing = facing == "left" ? -1 : facing == "rear" ? 0 : 1;
     p.held = root["held"].text_or("");
-    p.properties = file.rest(root, {"world", "x", "y", "facing", "held"});
+    p.properties = rest(file, {"world", "x", "y", "facing", "held"});
     player_text = player_json(p);
     return p;
-}
-
-void Save::settle_player(const Player& p) {
-    player_text = player_json(p);
 }
 
 bool Save::write_player(const Player& p) {

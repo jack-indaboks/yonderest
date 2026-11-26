@@ -22,10 +22,8 @@ public:
     Value(bool b) : data(b) {}
     Value(int n) : data(std::int64_t(n)) {}
     Value(long n) : data(std::int64_t(n)) {}
-    Value(long long n) : data(std::int64_t(n)) {}
     // Kept as a signed number whenever it fits, so equal numbers compare equal.
     Value(unsigned long n);
-    Value(unsigned long long n) : Value((unsigned long)n) {}
     Value(double d) : data(d) {}
     Value(std::string s) : data(std::move(s)) {}
     Value(const char* s) : data(std::string(s)) {}
@@ -57,10 +55,8 @@ public:
     std::vector<std::string> keys() const; // An object's property names in order; absent is none.
     std::string text() const;
     std::string text_or(const std::string& fallback) const { return present() ? text() : fallback; }
-    std::int64_t integer(std::int64_t low, std::int64_t high) const;
-    std::int64_t integer_or(std::int64_t fallback, std::int64_t low, std::int64_t high) const {
-        return present() ? integer(low, high) : fallback;
-    }
+    std::int64_t integer() const;
+    std::int64_t integer_or(std::int64_t fallback) const { return present() ? integer() : fallback; }
     std::uint64_t whole() const;
     double number() const;
     bool flag_or(bool fallback) const;
@@ -71,24 +67,17 @@ private:
     std::string where;
 };
 
-// The properties modules own on one thing, each module's under its name. The engine keeps them
-// without reading them. A group read from a file keeps its text and is written back exactly as it
-// was until it is set again, so properties nobody here recognizes survive a rewrite unchanged.
+// The properties modules own on one thing, each module's group under its name. The engine keeps
+// them without reading them, including those of modules the game does not have.
 class Properties {
 public:
-    struct Group {
-        std::string name;
-        Value value;
-        std::string text; // As read; empty once set.
-    };
     // A module's group; nothing if it has none.
     const Value& operator[](std::string_view module) const;
     // Replaces a module's group. Nothing, or an object with no members, removes it.
     void set(std::string_view module, Value group);
     bool empty() const { return groups.empty(); }
-    // Equal groups are equal however they were written.
-    bool operator==(const Properties& other) const;
-    std::vector<Group> groups;
+    bool operator==(const Properties&) const = default;
+    std::vector<std::pair<std::string, Value>> groups;
 };
 
 }

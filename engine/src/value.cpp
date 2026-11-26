@@ -62,10 +62,9 @@ std::string Field::text() const {
     return *s;
 }
 
-std::int64_t Field::integer(std::int64_t low, std::int64_t high) const {
+std::int64_t Field::integer() const {
     const auto* n = std::get_if<std::int64_t>(&node->data);
     if (!n) fail("must be a whole number");
-    if (*n < low || *n > high) fail("must be from " + std::to_string(low) + " to " + std::to_string(high));
     return *n;
 }
 
@@ -95,25 +94,17 @@ void Field::fail(const std::string& what) const {
 
 const Value& Properties::operator[](std::string_view module) const {
     static const Value nothing;
-    auto found = std::ranges::find(groups, module, &Group::name);
-    return found == groups.end() ? nothing : found->value;
+    auto found = std::ranges::find(groups, module, &std::pair<std::string, Value>::first);
+    return found == groups.end() ? nothing : found->second;
 }
 
 void Properties::set(std::string_view module, Value group) {
-    auto found = std::ranges::find(groups, module, &Group::name);
+    auto found = std::ranges::find(groups, module, &std::pair<std::string, Value>::first);
     bool empty = group.null() || (group.object() && group.object()->empty());
     if (empty) {
         if (found != groups.end()) groups.erase(found);
-    } else if (found != groups.end()) {
-        found->value = std::move(group);
-        found->text.clear();
-    } else groups.push_back({std::string(module), std::move(group), {}});
-}
-
-bool Properties::operator==(const Properties& other) const {
-    return std::ranges::equal(groups, other.groups, [](const Group& a, const Group& b) {
-        return a.name == b.name && a.value == b.value;
-    });
+    } else if (found != groups.end()) found->second = std::move(group);
+    else groups.emplace_back(std::string(module), std::move(group));
 }
 
 }

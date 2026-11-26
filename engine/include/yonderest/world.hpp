@@ -72,12 +72,14 @@ public:
     void set(int x, int y, const Block& block, Layer layer = 0);
     // Changes a cell, then tells `changed`.
     void put(int x, int y, const Cell& cell, Layer layer = 0);
-    std::function<void(int x, int y, Layer layer, const Cell& before)> changed;
+    std::function<void(int x, int y, Layer layer)> changed;
     // Asks for the chunks around this view, nearest first, takes in those that have arrived,
     // and unloads those far outside it, writing each changed one as it leaves.
     void retain(int left, int top, int right, int bottom);
     // Loads every chunk overlapping this area and waits for them, for starting play.
     void load(int left, int top, int right, int bottom);
+    // Takes in a chunk made outside the worker, such as a new world's first.
+    void keep(int cx, int cy, Chunk chunk);
     // Writes every changed chunk, behind play. Returns whether anything changed.
     bool save_changes();
 

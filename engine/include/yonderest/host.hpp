@@ -27,8 +27,7 @@ namespace yonder {
 
 struct Options {
     std::string name;
-    std::filesystem::path path, content, manifest, screenshot;
-    std::vector<std::filesystem::path> packs;
+    std::filesystem::path path, content, screenshot;
     std::optional<std::uint64_t> seed;
     std::optional<std::pair<int, int>> size;
     int frames = 0;
@@ -72,18 +71,17 @@ public:
         return *made;
     }
 
-    // What modules hand the display to show, asked for each time it draws.
+    // What a module hands the display to show, asked for each time it draws.
     template <class T>
     void provide(std::function<T()> provider) {
-        providers[std::type_index(typeid(T))].push_back([provider = std::move(provider)](void* out) {
-            static_cast<std::vector<T>*>(out)->push_back(provider());
-        });
+        providers[std::type_index(typeid(T))] = [provider = std::move(provider)](void* out) {
+            *static_cast<std::optional<T>*>(out) = provider();
+        };
     }
     template <class T>
-    std::vector<T> provided() const {
-        std::vector<T> result;
-        if (auto found = providers.find(std::type_index(typeid(T))); found != providers.end())
-            for (const auto& provider : found->second) provider(&result);
+    std::optional<T> provided() const {
+        std::optional<T> result;
+        if (auto found = providers.find(std::type_index(typeid(T))); found != providers.end()) found->second(&result);
         return result;
     }
     // Entries modules add to the menu, between Resume and Quit, in the order they attach.
@@ -100,7 +98,7 @@ public:
     Target target() const;
     // Frames an action and has it carried out.
     Action act(Act act);
-    Intent intent(std::string_view name);
+    void intent(std::string_view name);
     // Sets what the player holds.
     void hold(const Block& block);
     void back();
@@ -124,7 +122,7 @@ public:
 private:
     // Modules outlast the world, whose worker may still be generating for them.
     std::vector<std::shared_ptr<void>> owned;
-    std::map<std::type_index, std::vector<std::function<void(void*)>>> providers;
+    std::map<std::type_index, std::function<void(void*)>> providers;
     std::unique_ptr<Save> saved;
     std::unique_ptr<WorldFolder> folder;
     std::unique_ptr<World> opened;

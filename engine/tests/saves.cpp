@@ -40,7 +40,7 @@ class Nothing : public Generation {
 public:
     void create(Settings&) override {}
     void open(const Settings&) override {}
-    int first_row() override { return 0; }
+    Beginning begin() override { return {0, Chunk(2), 0, 0}; }
     Chunk generate(int, int, const Neighborhood&) override { return Chunk(2); }
 };
 
@@ -175,8 +175,8 @@ void editing(const std::filesystem::path& folder) {
     auto kept = [&](const std::filesystem::path& file, const std::string& property) {
         require(read(file).find(property) != std::string::npos, file.filename().string() + " keeps " + property + " through a rewrite");
     };
-    kept(chunk, "{\"block\": \"base:stone\", \"crafting\": {\"quantity\":2}, \"moss\": 3}");
-    kept(chunk, "\"weather\": {\"rain\": true}");
+    kept(chunk, "{\"block\": \"base:stone\", \"crafting\": {\"quantity\": 2}, \"moss\": 3}");
+    kept(chunk, "\"rain\": true");
     kept(world_file, "\"lighting\": \"soft\"");
     kept(folder / "player.json", "\"mood\": \"glad\"");
     auto first = read(chunk) + read(world_file) + read(folder / "player.json");
@@ -198,25 +198,6 @@ void editing(const std::filesystem::path& folder) {
     require(rejected, "a damaged chunk is refused by name, never regenerated");
 }
 
-// Earlier worlds are refused by name, never misread.
-void retired(const std::filesystem::path& folder) {
-    std::filesystem::create_directories(folder / "chunks");
-    write(folder / "world.json", "{\"seed\": 1, \"columns\": 32, \"rows\": 8, \"chunk_size\": 32}");
-    auto refusal = [](const std::filesystem::path& f) {
-        try { Save save(f); } catch (const std::runtime_error& error) { return std::string(error.what()); }
-        return std::string();
-    };
-    require(refusal(folder).find("0.0.6 or earlier") != std::string::npos, "a world from 0.0.6 is refused, saying so");
-    require(std::filesystem::exists(folder / "world.json") && !std::filesystem::exists(folder / "player.json"), "and left as it was");
-    std::filesystem::create_directories(folder.parent_path() / "universe");
-    {
-        Save save(folder.parent_path() / "universe");
-        save.world(Save::starting_world, layers).write_settings(Settings{});
-    }
-    require(refusal(folder.parent_path() / "universe" / "origin").find("open the save that holds it") != std::string::npos,
-            "a world folder inside a save is not taken for a save");
-}
-
 }
 
 int main() {
@@ -225,7 +206,6 @@ int main() {
         std::filesystem::create_directories(scratch);
         round_trip(scratch / "round-trip");
         editing(scratch / "editing");
-        retired(scratch / "old" / "world");
         std::filesystem::remove_all(scratch);
         return 0;
     } catch (const std::exception& error) {

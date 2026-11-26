@@ -72,9 +72,7 @@ public:
     const std::filesystem::path folder;
     WorldFolder world(const std::string& name, std::vector<std::string> layers) const;
     std::optional<Player> player();
-    // Takes what is now in memory as what the file holds, without writing it.
-    void settle_player(const Player& player);
-    // Writes only if the player differs from what was last read, written or settled. Returns whether it will.
+    // Writes only if the player differs from what was last read or written. Returns whether it will.
     bool write_player(const Player& player);
     Worker worker;
 

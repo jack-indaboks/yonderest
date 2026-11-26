@@ -1,11 +1,11 @@
 #include "json.hpp"
+#include "yonderest/content.hpp"
 
 #include <json/reader.h>
 #include <json/value.h>
 
 #include <algorithm>
 #include <charconv>
-#include <cmath>
 #include <cstdio>
 #include <fstream>
 #include <memory>
@@ -45,28 +45,13 @@ Value convert(const Json::Value& json) {
     return {};
 }
 
-// Where each object member's value lies in the text, found once the values have settled in place.
-void locate(const Json::Value& json, const Value& value, std::map<const Value*, std::pair<std::size_t, std::size_t>>& spans) {
-    if (const auto* members = value.object()) {
-        for (const auto& [name, member] : *members) {
-            const auto& source = json[name];
-            spans[&member] = {std::size_t(source.getOffsetStart()), std::size_t(source.getOffsetLimit())};
-            locate(source, member, spans);
-        }
-    } else if (const auto* items = value.array()) {
-        for (Json::ArrayIndex i = 0; i < items->size(); ++i)
-            if ((*items)[i].object() || (*items)[i].array()) locate(json[i], (*items)[i], spans);
-    }
 }
 
-}
-
-JsonFile::JsonFile(const std::filesystem::path& file) : name(file.string()) {
+Value read_json(const std::filesystem::path& file) {
     std::ifstream in(file, std::ios::binary);
-    if (!in) throw std::runtime_error("Cannot read " + name);
     std::ostringstream all;
     all << in.rdbuf();
-    text = all.str();
+    auto text = all.str();
     if (text.starts_with("\xEF\xBB\xBF")) text.erase(0, 3); // An editor's byte order mark.
     // Plain JSON: no comments, trailing commas or repeated keys.
     Json::CharReaderBuilder builder;
@@ -75,19 +60,15 @@ JsonFile::JsonFile(const std::filesystem::path& file) : name(file.string()) {
     Json::Value json;
     std::string errors;
     if (!reader->parse(text.data(), text.data() + text.size(), &json, &errors))
-        throw std::runtime_error(name + " is not valid JSON: " + errors);
-    value = convert(json);
-    locate(json, value, spans);
+        throw std::runtime_error(file.string() + " is not valid JSON: " + errors);
+    return convert(json);
 }
 
-Properties JsonFile::rest(const Field& object, std::initializer_list<std::string_view> known) const {
+Properties rest(const Value& object, std::initializer_list<std::string_view> known) {
     Properties result;
-    for (const auto& member : object.keys()) {
-        if (std::ranges::find(known, std::string_view(member)) != known.end()) continue;
-        const auto& value = object.value()[member];
-        auto [start, limit] = spans.at(&value);
-        result.groups.push_back({member, value, text.substr(start, limit - start)});
-    }
+    if (const auto* members = object.object())
+        for (const auto& [name, value] : *members)
+            if (std::ranges::find(known, std::string_view(name)) == known.end()) result.groups.emplace_back(name, value);
     return result;
 }
 
@@ -158,7 +139,6 @@ JsonWriter& JsonWriter::whole(std::uint64_t value) {
 }
 
 JsonWriter& JsonWriter::number(double value) {
-    if (!std::isfinite(value)) throw std::runtime_error("Cannot save a number that is not finite");
     separate();
     // The shortest text that reads back as exactly this value.
     char text[32];
@@ -205,19 +185,11 @@ JsonWriter& JsonWriter::value(const Value& v) {
 }
 
 JsonWriter& JsonWriter::properties(const Properties& properties) {
-    for (const auto& group : properties.groups) {
-        key(group.name);
-        if (group.text.empty()) value(group.value);
-        else {
-            separate();
-            out += group.text;
-        }
-    }
+    for (const auto& [name, group] : properties.groups) key(name).value(group);
     return *this;
 }
 
 std::string JsonWriter::finish() {
-    if (!levels.empty()) throw std::logic_error("Unclosed JSON container");
     return out + '\n';
 }
 

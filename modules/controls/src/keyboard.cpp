@@ -99,7 +99,7 @@ public:
             host.intent(key == SDLK_LEFT ? "previous page" : "next page");
             return;
         }
-        if (!host.display || !host.display->focused()) return;
+        if (!host.display->focused()) return;
         if (key == SDLK_A || key == SDLK_D) {
             if (key == SDLK_A) left = true;
             else right = true;
@@ -131,7 +131,7 @@ public:
     }
 
     void frame(double now) override {
-        bool playing = host.display && host.display->focused() && !host.screen();
+        bool playing = host.display->focused() && !host.screen();
         if (playing && mining && now >= next) strike(now);
     }
 
@@ -143,7 +143,7 @@ private:
     void steer() { host.physics->steer(int(right) - int(left), sprint); }
 
     void strike(double now) {
-        mining = host.act(Act::a).repeat;
+        mining = !host.act(Act::a).claimed; // An open ring's step does not repeat.
         if (mining) next = now + repeat_seconds;
     }
 };

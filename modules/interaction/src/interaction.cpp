@@ -26,7 +26,7 @@ public:
     void act(Action& action) override {
         switch (action.act) {
         case Act::a: take(action); break;
-        case Act::b: finish(action, false, "Nothing to interact with"); break;
+        case Act::b: notify("Nothing to interact with"); break;
         case Act::c: place(action); break;
         }
     }
@@ -39,10 +39,11 @@ public:
         auto& p = host.player();
         auto& world = host.world();
         auto t = *pending;
+        // Cancelled quietly when the aim or the column changes or the feet land.
         if (!p.down || host.physics->grounded()
             || wrap(t.x, world.settings.width()) != wrap(int(std::floor(p.x + player_width / 2)), world.settings.width())) {
             pending.reset();
-            return; // Cancelled, quietly.
+            return;
         }
         double reaching = p.y + player_height - t.y; // How far the feet still reach into the cell.
         if (reaching > 0.00001) {
@@ -54,8 +55,7 @@ public:
             }
         }
         pending.reset();
-        Action action{.act = Act::c, .cell = t, .held = p.held};
-        put(action, t);
+        put(p.held, t);
     }
 
 private:
@@ -68,14 +68,8 @@ private:
         return found == tools.end() ? none : found->second;
     }
 
+    // Outcomes the world shows for itself, such as a block taken or placed, say nothing.
     void notify(const std::string& text) { host.events.announce(Notice{text}); }
-
-    // Routine outcomes the world already shows are quiet.
-    void finish(Action& action, bool ok, std::string message, bool quiet = false) {
-        action.ok = ok;
-        action.message = std::move(message);
-        if (!quiet) notify(action.message);
-    }
 
     // In the air the body straddles two rows. When the target cannot take an action that needs it
     // occupied (or empty) and the other row the body overlaps can, that row is meant instead.
@@ -93,56 +87,53 @@ private:
         return t;
     }
 
-    void take(Action& action) {
+    void take(const Action& action) {
         auto& p = host.player();
         auto& world = host.world();
-        if (!p.held.empty() && tool(p.held).empty()) return finish(action, false, "Use empty hand or a tool");
+        if (!action.held.empty() && tool(action.held).empty()) return notify("Use empty hand or a tool");
         // Anything sharing the body's own cell comes before the cell in front.
         Target own{int(std::floor(p.x + player_width / 2)), int(std::floor(p.y + player_height / 2))};
         auto t = world.block(own.x, own.y).empty() ? favor(action.cell, true) : own;
-        if (t.y < 0 || t.y >= world.settings.height()) return finish(action, false, "World boundary");
+        if (t.y < 0 || t.y >= world.settings.height()) return notify("World boundary");
         Cell old = world.cell(t.x, t.y, t.layer);
-        if (old.id.empty()) return finish(action, false, "Empty space", true);
-        if (auto needed = requirements.find(old.id); needed != requirements.end() && tool(p.held) != needed->second)
-            return finish(action, false, "Requires a " + needed->second);
-        auto count = host.events.announce(Taking{p, t.x, t.y, t.layer, old}).count;
+        if (old.id.empty()) return;
+        if (auto needed = requirements.find(old.id); needed != requirements.end() && tool(action.held) != needed->second)
+            return notify("Requires a " + needed->second);
+        auto count = host.events.announce(Taking{old}).count;
         host.events.announce(Taken{p, old.id, count});
         world.put(t.x, t.y, {}, t.layer);
-        finish(action, true, "Gathered x" + std::to_string(count), true);
     }
 
-    void place(Action& action) {
+    void place(const Action& action) {
         auto& p = host.player();
         auto& world = host.world();
         auto t = action.cell;
-        if (p.held.empty()) return finish(action, false, "Empty hand");
+        if (action.held.empty()) return notify("Empty hand");
         if (p.down && t.layer == 0) {
             // Rising out of an occupied cell, the request waits for the feet to clear the one above.
             bool rising = host.physics->rising() || (host.physics->jumping() && host.physics->grounded());
             if (rising && !world.block(t.x, t.y).empty() && world.block(t.x, t.y - 1).empty()) {
                 pending = Target{t.x, t.y - 1};
-                return finish(action, true, "Placement waits for clearance", true);
+                return;
             }
         }
-        put(action, favor(t, false));
+        put(action.held, favor(t, false));
     }
 
-    void put(Action& action, const Target& t) {
+    void put(const Block& held, const Target& t) {
         auto& p = host.player();
         auto& world = host.world();
-        if (t.y < 0 || t.y >= world.settings.height()) return finish(action, false, "World boundary");
-        if (!world.ready(t.x, t.y)) return finish(action, false, "Not there yet");
-        if (!world.block(t.x, t.y, t.layer).empty()) return finish(action, false, "Already occupied");
+        if (t.y < 0 || t.y >= world.settings.height()) return notify("World boundary");
+        if (!world.ready(t.x, t.y)) return notify("Not there yet");
+        if (!world.block(t.x, t.y, t.layer).empty()) return notify("Already occupied");
         auto [x, y] = std::pair{p.x, p.y};
-        auto placing = host.events.announce(Placing{.player = p, .x = t.x, .y = t.y, .layer = t.layer, .cell = Cell{p.held, {}}});
+        auto placing = host.events.announce(Placing{.player = p, .x = t.x, .y = t.y, .layer = t.layer, .cell = Cell{held, {}}});
         if (placing.refusal) {
             std::tie(p.x, p.y) = std::pair{x, y};
-            return finish(action, false, *placing.refusal);
+            return notify(*placing.refusal);
         }
-        Block placed = p.held;
         world.put(t.x, t.y, placing.cell, t.layer);
-        host.events.announce(Placed{p, placed, placing.count});
-        finish(action, true, "Placed", true);
+        host.events.announce(Placed{p, held, placing.count});
     }
 };
 

@@ -1,6 +1,6 @@
 // The generator: placeholder terrain, made chunk by chunk from the seed, settling to meet the land
-// beside it, and what lies behind each place. Its terrain configuration names the blocks it uses for
-// each role; a world keeps the configuration it was made with. What it keeps about each chunk, the
+// beside it, and what lies behind each place. Its terrain names the block it uses for each role;
+// a world keeps the terrain it was made with. What it keeps about each chunk, the
 // ground line and how far the land has settled, is its own business.
 
 #include "yonderest/host.hpp"
@@ -13,9 +13,6 @@
 namespace yonder::generator {
 namespace {
 
-// The one generation this build makes.
-constexpr const char* this_generation = "expedition-1";
-
 struct Terrain {
     Block grass, soil, stone, sand, timber, leaves, clay, ore;
 };
@@ -24,10 +21,8 @@ constexpr std::pair<const char*, Block Terrain::*> roles[]{
     {"timber", &Terrain::timber}, {"leaves", &Terrain::leaves}, {"clay", &Terrain::clay}, {"ore", &Terrain::ore}};
 
 Terrain read_terrain(const Field& terrain) {
-    auto version = terrain["generation"].text();
-    if (version != this_generation) terrain["generation"].fail("is not a generation this build makes: " + version);
     Terrain t;
-    for (auto [name, role] : roles) t.*role = terrain["materials"][name].text();
+    for (auto [name, role] : roles) t.*role = terrain[name].text();
     return t;
 }
 
@@ -138,44 +133,36 @@ Record record(const Chunk& chunk) {
     Record r;
     r.ours = own.present();
     auto ground = own["ground"];
-    if (ground.present() && ground.size() != chunk_size) ground.fail("must have " + std::to_string(chunk_size) + " rows, one per column");
-    for (std::size_t i = 0; i < ground.size(); ++i) r.ground.push_back(int(ground[i].integer(-(1 << 20), 1 << 20)));
+    for (std::size_t i = 0; i < ground.size(); ++i) r.ground.push_back(int(ground[i].integer()));
     auto rows = own["settling"];
     if (rows.present()) {
-        if (rows.size() != chunk_size) rows.fail("must have " + std::to_string(chunk_size) + " rows");
         r.settling.resize(chunk_area);
-        for (std::size_t ly = 0; ly < chunk_size; ++ly) {
-            auto row = rows[ly];
-            if (row.size() != chunk_size) row.fail("must have " + std::to_string(chunk_size) + " cells");
-            for (std::size_t lx = 0; lx < chunk_size; ++lx) r.settling[ly * chunk_size + lx] = std::uint8_t(row[lx].integer(0, settle_extent));
-        }
+        for (std::size_t ly = 0; ly < chunk_size; ++ly)
+            for (std::size_t lx = 0; lx < chunk_size; ++lx) r.settling[ly * chunk_size + lx] = std::uint8_t(rows[ly][lx].integer());
     }
     return r;
 }
 
 class Generator : public Generation {
 public:
-    explicit Generator(Host& host) : host(host) {
-        Field terrain(host.content.manifest["generator"]["terrain"], "manifest.generator.terrain");
-        pack = terrain.text();
-        if (!host.content.modules.contains(pack)) terrain.fail("must name an enabled pack: " + pack);
-    }
+    // A new world takes its terrain from the pack that provides it.
+    explicit Generator(Host& host) : host(host), terrain(host.content.parts("terrain.json").at(0).second) {}
 
-    void create(Settings& settings) override {
-        auto file = host.content.modules.at(pack).folder / "terrain.json";
-        auto terrain = read_json(file);
-        read_terrain(Field(terrain, file.string()));
-        settings.properties.set("generator", std::move(terrain));
-    }
+    void create(Settings& settings) override { settings.properties.set("generator", terrain); }
 
     void open(const Settings& settings) override {
-        Field own(settings.properties["generator"], "world.json: generator");
-        if (!own.present()) own.fail("is missing; the world may be from an earlier version of Yonderest");
-        t = read_terrain(own);
+        t = read_terrain(Field(settings.properties["generator"], "world.json: generator"));
         s = settings;
     }
 
-    int first_row() override { return ground(s, 0) / chunk_size; }
+    // The chunk holding column zero's ground, and the cell standing on it. A new world's first chunk
+    // has no neighbors to settle against, so its ground is the generator's own and needs no other
+    // chunk to find. When that ground is a chunk's top row, the cell standing on it is the open sky
+    // of the chunk above, which arrives with the land around the player before play begins.
+    Beginning begin() override {
+        int g = ground(s, 0);
+        return {g / chunk_size, generate(0, g / chunk_size, {}), 0, g - 1};
+    }
 
     Chunk generate(int cx, int cy, const Neighborhood& near) override;
 
@@ -186,9 +173,8 @@ public:
         x = wrap(x, s.width());
         for (int cy = 0; cy < s.rows; ++cy)
             if (const auto* c = world.chunk(x, cy * chunk_size)) {
-                const auto* line = c->properties["generator"]["ground"].array();
-                if (line && int(line->size()) == chunk_size)
-                    return int(Field((*line)[x % chunk_size], "chunk.generator.ground").integer(INT_MIN, INT_MAX));
+                if (const auto* line = c->properties["generator"]["ground"].array())
+                    return int(Field((*line)[x % chunk_size], "chunk.generator.ground").integer());
             }
         return ground(s, x);
     }
@@ -208,7 +194,7 @@ public:
 
 private:
     Host& host;
-    std::string pack;
+    Value terrain;
     Terrain t;
     Settings s;
 
@@ -228,8 +214,7 @@ private:
 
 Chunk Generator::generate(int cx, int cy, const Neighborhood& near) {
     const int x0 = cx * chunk_size, y0 = cy * chunk_size;
-    std::size_t layers = host.content.layers.size();
-    Chunk chunk(layers);
+    Chunk chunk(host.content.layers.size());
     std::array<std::array<Record, 3>, 3> records;
     for (int dy = -1; dy <= 1; ++dy)
         for (int dx = -1; dx <= 1; ++dx)
@@ -293,7 +278,7 @@ Chunk Generator::generate(int cx, int cy, const Neighborhood& near) {
         int dx = int(std::floor(double(lx) / chunk_size)), dy = int(std::floor(double(ly) / chunk_size));
         if (dx < -1 || dx > 1 || dy < -1 || dy > 1 || (!dx && !dy)) return nullptr;
         const auto* n = near.at(dx, dy);
-        if (!n || layer >= Layer(n->layers.size())) return nullptr;
+        if (!n) return nullptr;
         const auto& c = n->at(lx - dx * chunk_size, ly - dy * chunk_size, layer);
         return c.id.empty() ? nullptr : &c;
     };
@@ -370,7 +355,7 @@ Chunk Generator::generate(int cx, int cy, const Neighborhood& near) {
                 }
             }
             chunk.at(lx, ly).id = id;
-            if (layers > 1) chunk.at(lx, ly, 1).id = rear;
+            chunk.at(lx, ly, 1).id = rear;
         }
     }
 

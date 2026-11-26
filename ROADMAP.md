@@ -6,16 +6,16 @@ This roadmap says when features arrive. What each feature is belongs to [DESIGN.
 
 A **build** is one round of building, followed by testing, fixes and bringing the documents into line. Every published build bumps the patch version. Each build also carries the outstanding feedback on how the game feels, so feel is tuned continuously rather than in separate passes.
 
-- **Prototype, 0.0.x.** The game's bones are being settled, and anything may break between builds, saved worlds included. Each build is effectively its own milestone. The engine and each module carry versions of their own; the flagship's version is the game's.
+- **Prototype, 0.0.x.** The game's bones are being settled, and anything may break between builds, saved worlds included. Each build is effectively its own milestone.
 - **Alpha, from 0.1.0.** The bones are settled enough to build on without breaking everything, and worlds are expected to persist. Milestones are named updates that bump the minor version, each made of several builds. A milestone may still break compatibility.
-- **Stable, from 1.0.0.** Compatibility is kept within a major version, including every extension interface modules rely on: a breaking change to one, such as the generator interface, bumps the major version.
+- **Stable, from 1.0.0.** Compatibility is kept within a major version, including the engine's API that modules rely on: a change that breaks it, such as to the generator interface, bumps the major version.
 
 ## Prototype: settling the bones
 
 0.1.0 arrives when the engine's interfaces and every core module exist, the game works on them, and nothing is left that would break a persistent world or a content pack. At 0.1.0 the engine and each module move into repositories of their own, which the flagship pins as submodules.
 
-1. **0.0.8: The explosion.** The project takes its modular shape: the engine and each core module in a directory of its own, built as its own library with its own version, the existing code restructured along the engine's interfaces, and every module's interfaces and dependencies declared. The game plays as before, except that crafting no longer tells placed blocks from natural ones.
-2. **0.0.9: The generator.** Native modules loaded at runtime through versioned interfaces, layers declared by modules, generation in passes, and the generator rebuilt as the first module on its interface. Loading claims only the land the view actually nears.
+1. **0.0.8: The explosion.** The project takes its modular shape: the engine and each core module in a directory of its own, built as its own library, the existing code restructured along the engine's interfaces, and every module's interfaces and dependencies declared. The game plays as before, except that crafting no longer tells placed blocks from natural ones.
+2. **0.0.9: The generator.** Native modules loaded at runtime through the engine's API, layers declared by modules, generation in passes, and the generator rebuilt as the first module on its interface. Loading claims only the land the view actually nears.
 3. **Module by module.** Each following build develops one module together with the interfaces it touches. Their order is provisional:
    - physics, with movement measured in blocks: the character a whole block, the center rule, whole-block jumps, and smooth movement between cells saved as cells;
    - interaction and controls: actions framed by the engine and given meaning by modules;

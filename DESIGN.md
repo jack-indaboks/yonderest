@@ -208,7 +208,7 @@ Stations compose through physical layout. To batch a recipe that requires a forg
 
 ## Modules and extension
 
-The flagship game is an engine and a curated collection of modules, not a single binary. The product is the flagship game, not the engine: modularity is a property of the game, which lets it be rebuilt part by part while it remains itself. Flagship-first determines which functionality is developed first, not a bias toward coupling or privileged first-party code: first-party modules use exactly the mechanisms open to everyone else. A versioned flagship manifest names the modules that make up the standard game.
+The flagship game is an engine and a curated collection of modules, not a single binary. The product is the flagship game, not the engine: modularity is a property of the game, which lets it be rebuilt part by part while it remains itself. Flagship-first determines which functionality is developed first, not a bias toward coupling or privileged first-party code: first-party modules use exactly the mechanisms open to everyone else. A flagship manifest names the modules that make up the standard game.
 
 Code fits what its uses actually need. Where two things need the same thing, it is generalized and written once. Where they need only similar things, forcing one general solution onto both is the wrong fit.
 
@@ -222,7 +222,7 @@ The engine has five responsibilities:
 - **Identity.** Stable identifiers for blocks, modules and worlds, and for each thing the properties that modules own. The engine keeps a module's properties without reading them.
 - **Time.** The tick, the order of changes, and the scheduling of work ahead of play, so every module sees one consistent world.
 - **Memory.** A module hands the engine its data and asks it to be kept; the engine writes it as JSON and gives it a persistent home. Saved state is authoritative.
-- **Hosting.** Loading modules, checking interface versions, resolving dependencies, and carrying events between modules through hooks. A pre-hook comes before a change, and modules can refuse or adjust it: a placement onto a workbench asks how many blocks it takes before anything is taken. An event follows the change, and modules react to it: a placement that completes an arrangement lets crafting transform it. Modules react to one another through hooks rather than calling one another.
+- **Hosting.** Loading modules, resolving dependencies, and carrying events between modules through hooks. A pre-hook comes before a change, and modules can refuse or adjust it: a placement onto a workbench asks how many blocks it takes before anything is taken. An event follows the change, and modules react to it: a placement that completes an arrangement lets crafting transform it. Modules react to one another through hooks rather than calling one another.
 
 The player belongs to the engine: it is the point where every module meets. The engine frames each action: which entity acts, the cell in front of it, the block it holds, and which action it performs, such as action A or action B. Everything those mean comes from modules: that the held block is a pick, that the cell holds copper, that action A is taking, and that J triggers action A.
 
@@ -230,7 +230,7 @@ The test for any feature: if it must interpret what something means, it belongs 
 
 ### Interfaces
 
-An interface is where the engine and modules talk. Each has one job:
+The engine offers modules one API, and it is where the engine and modules talk. The API is organized into interfaces, each with one job:
 
 - **Generation** populates the world.
 - **Physics** governs movement within it.
@@ -264,15 +264,15 @@ Core modules are the ones the game needs before alpha: those already built or on
 
 Scripting is an important module but not a core one; a Lua module arrives during alpha.
 
-Each module has its own version; the flagship's version is the version of the game.
+Each module has its own version; the flagship's version is the version of the game. Versions are for people: a changed number tells a reader that something might break. It never stops a module from loading. A module that works, works, and one that does not fails loudly where it breaks. That is where versions belong in the code: the error names the module's version and the version of the game it was made for beside the running one, so a version bump that caused the breakage is visible as its cause.
 
 ### Native modules
 
-A module is a folder holding its declaration, and optionally data and a native library; a content pack is simply a module without code, and one loader handles both. A native module's library talks to the engine through the engine's interfaces, each a narrow C interface. Any language that can speak them can build one. A module declares which interfaces it uses and the version of each it was made for, and that is checked when it loads. There is no universal binary interface for everything, and adding an interface never breaks the existing ones. Desktop platforms load native modules at runtime; platforms that forbid loading code link the same modules in when the game is built, so modding there is more limited. Changes that no interface reaches call for a custom build of the engine.
+A module is a folder holding its declaration, and optionally data and a native library; a content pack is simply a module without code, and one loader handles both. A native module's library talks to the engine through the engine's interfaces, each a narrow C interface. Any language that can speak them can build one. A module declares which interfaces it uses. There is no universal binary interface for everything, and adding an interface never breaks the existing ones. Desktop platforms load native modules at runtime; platforms that forbid loading code link the same modules in when the game is built, so modding there is more limited. Changes that no interface reaches call for a custom build of the engine.
 
 Everything crossing the boundary is plain C values and handles, never engine internals or raw JSON: the engine does the parsing. References held by a module have defined lifetimes across chunk loading and unloading. A native module runs with the full rights of any program; installing one is a decision to trust its author.
 
-Modules can offer interfaces to other modules as well. Any module can offer its own, in whatever form suits it: a declarative format, a C interface, a scripting API. The Lua module offering a Lua API to scripts and a generator offering an interface to the mods that extend it are the same shape. A mod built on a module's interface depends on that module, and on the version of the interface it was made for.
+Modules can offer interfaces to other modules as well. Any module can offer its own, in whatever form suits it: a declarative format, a C interface, a scripting API. The Lua module offering a Lua API to scripts and a generator offering an interface to the mods that extend it are the same shape. A mod built on a module's interface depends on that module.
 
 ### Declarative content
 
@@ -298,7 +298,7 @@ Generation mods take three forms:
 
 A world can move to a different generator, whether the flagship's next one or any other installed. It keeps every chunk it has; once generated, a chunk simply is the world there. The new generator makes only new territory, meeting the chunks already there as it meets any neighbor. Each flagship release includes only its current generator, so a player who wants a world to continue with an older one keeps that module installed.
 
-Installing or upgrading the game checks every world's generator. A world whose generator would be missing, or would no longer load because the engine has moved past its interface version, is caught then, and resolved there: by an updated build of the same generator, or by moving the world to another. It is not discovered on opening the world.
+Installing or upgrading the game checks every world's generator. A world whose generator would be missing is caught then, and resolved there: by keeping that generator, or by moving the world to another. It is not discovered on opening the world.
 
 ### Selecting modules
 
@@ -312,7 +312,7 @@ Disabling a module does not erase its saved identifiers. For example, a block sa
 
 The provisional interpretation is a common dirt-like fallback: every property the missing definition would have supplied takes its default, giving ordinary collision, mining and gameplay behavior. It is drawn with the first image of the first sprite sheet, which is dirt by default; a sprite sheet may make that first image a question mark instead. That interpretation does not replace the saved identifier. Restoring the module restores the original interpretation wherever the content has not been changed. Deliberate player actions can modify or destroy it.
 
-**Open:** Module declaration and compatibility details; the verbs each interface carries, worked out as the modules using it are built; and how actions are registered and bound.
+**Open:** Module declaration details; the verbs each interface carries, worked out as the modules using it are built; and how actions are registered and bound.
 
 ## Runtime and display
 

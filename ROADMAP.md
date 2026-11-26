@@ -6,17 +6,22 @@ This roadmap says when features arrive. What each feature is belongs to [DESIGN.
 
 A **build** is one round of building, followed by testing, fixes and bringing the documents into line. Every published build bumps the patch version. Each build also carries the outstanding feedback on how the game feels, so feel is tuned continuously rather than in separate passes.
 
-- **Prototype, 0.0.x.** The game's bones are being settled, and anything may break between builds, saved worlds included. Each build is effectively its own milestone.
+- **Prototype, 0.0.x.** The game's bones are being settled, and anything may break between builds, saved worlds included. Each build is effectively its own milestone. The engine and each module carry versions of their own; the flagship's version is the game's.
 - **Alpha, from 0.1.0.** The bones are settled enough to build on without breaking everything, and worlds are expected to persist. Milestones are named updates that bump the minor version, each made of several builds. A milestone may still break compatibility.
 - **Stable, from 1.0.0.** Compatibility is kept within a major version, including every extension interface modules rely on: a breaking change to one, such as the generator interface, bumps the major version.
 
 ## Prototype: settling the bones
 
-0.1.0 arrives when nothing is left that would break a persistent world or a content pack, and the core loop is complete enough to be worth testing over time.
+0.1.0 arrives when every module and interface of the base game exists, the game works on them, and nothing is left that would break a persistent world or a content pack. At 0.1.0 the engine and each module move into repositories of their own, which the flagship pins as submodules.
 
-1. **0.0.8: The generator as a native module.** The engine loading native modules at defined extension points, the generator as the first of them, and generator add-ons passed to it as declarative content.
-2. **0.0.9: The 32-pixel look.** The 32-pixel art grid, the adaptive view, a new character drawn on a shareable canvas, redrawn world and interface art, and the parallax backdrop.
-3. **Carrying and storage.** The finite backpack, stack sizes, in-world storage, and objects that carry their own state.
+1. **0.0.8: The explosion.** The project takes its modular shape: the engine and each module in a directory of its own, built as its own library with its own version, the existing code restructured into the module it belongs to, and every dependency between modules declared. The game itself is unchanged.
+2. **0.0.9: The generator.** Native modules loaded at runtime through versioned interfaces, layers declared by modules, generation in passes, and the generator rebuilt as the first module on that interface.
+3. **Module by module.** Each following build develops one module together with the interfaces it touches. Their order is provisional:
+   - physics;
+   - embodiment and controls;
+   - crafting and tools;
+   - inventory, with carrying and storage: the finite backpack, stack sizes, in-world storage and objects that carry their own state;
+   - presentation, with the 32-pixel look: the art grid, the adaptive view, a new character on a shareable canvas, redrawn world and interface art, and the parallax backdrop.
 
 A closer search for remaining bones may add builds before 0.1.0.
 

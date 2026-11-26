@@ -118,7 +118,7 @@ Every world has two block layers. The rear layer is interactable and nonblocking
 
 Underground, the rear layer is as varied as the foreground in material, with its own deposits, perhaps slightly richer than the foreground's, hidden until the foreground before them is removed. That gives mining a reason even where the screen already shows what lies a few blocks down. The rear layer has no caves of its own: its variety is in what it holds, not in openings. Above ground, open sky lies behind the foreground.
 
-Behind the rear layer is a backdrop that cannot be touched: a muted texture of the biome's base material, sky above ground, stone below it, and the local base material in other biomes. The backdrop is set back with parallax, so it reads as distance beyond reach rather than as blocks to mine. It is drawn from where it is, as the sky is; it is not generated or saved as blocks, so there is no third block layer. Where the ground lay when a chunk was generated decides whether sky or stone lies behind it, so digging a hill away does not turn the distance behind it into sky. Removing a foreground block exposes the rear-layer block behind it, and removing that exposes the backdrop.
+Behind the rear layer is a backdrop that cannot be touched: a muted texture of the biome's base material, sky above ground, stone below it, and the local base material in other biomes. The backdrop is set back with parallax, so it reads as distance beyond reach rather than as blocks to mine. The generator decides what backdrop lies behind each place, so it can differ from biome to biome and with depth. Digging does not change it: the distance behind a hill stays where it was when the hill is gone. The backdrop is never a block, so there is no third block layer. Removing a foreground block exposes the rear-layer block behind it, and removing that exposes the backdrop.
 
 Generated rear-layer material and its removal persist as world state. Saved terrain keeps whatever rear layer it was saved with, including none. Lighting is separate work.
 
@@ -150,7 +150,7 @@ Saved terrain is authoritative. Adding, removing, or updating generation modules
 
 A new chunk takes boundary conditions only from its immediate neighbors; those conditions carry forward whatever transition remains. At a boundary between generations, the new generator's side settles into the terrain its rules would otherwise produce within roughly one or two chunks. This applies vertically as well as horizontally, including across the world seam. The exploration-order guarantee applies while generation rules are unchanged; changing them can produce different results according to which territory was already saved.
 
-Boundary information may include elevation, slope, geological layers, water levels, or environmental fields, according to the generator's needs. A separate post-generation blending subsystem is not prescribed. Each chunk keeps what its neighbors and the backdrop need from its generation, starting with where the ground lies across it. A chunk that was not generated, such as one built by hand, can carry the same information or have it read from its blocks, so the land around it generates to meet it.
+Boundary information may include elevation, slope, geological layers, water levels, or environmental fields, according to the generator's needs. A separate post-generation blending subsystem is not prescribed. What a generator keeps about each chunk for later neighbors is its own business. Land generated beside a chunk that was never generated, such as one built by hand, still meets it.
 
 World parameters and generated material definitions persist wherever they are needed to keep the world consistent. Save and resume preserve player position, inventory, and changes to the world.
 
@@ -158,7 +158,7 @@ World parameters and generated material definitions persist wherever they are ne
 
 Saves are ordinary JSON plaintext, readable and editable outside the game. Persistence supports geographically bounded loading and writing without reading or rewriting the whole explored world. There is no database in persistence.
 
-The representation describes game meaning through named properties, stable content identifiers and explicit spatial structure, not C++ memory layouts or positional records wrapped in JSON strings. JSON is read into the game's own plain data where a file is loaded, and written from it where a file is saved; the rest of the game never handles JSON. No library mirrors C++ structures into JSON automatically, since a code change would then silently change the save format.
+The representation describes game meaning through named properties, stable content identifiers and explicit spatial structure, not C++ memory layouts or positional records wrapped in JSON strings. JSON is read into the game's own plain data where a file is loaded, and written from it where a file is saved; the rest of the game never handles JSON. No library mirrors C++ structures into JSON automatically, since a code change would then silently change the save format. Each property is grouped under the module that owns it, in saves and in content alike, so two modules never claim the same name.
 
 Adding an optional property requires neither rewriting existing saves nor a global format version. Absence has a meaning appropriate to the feature: a layer absent from older terrain, for example, means that layer is empty. Removing a property leaves no dummy positional slot. Properties the game does not recognize neither invalidate a save nor disappear when the game rewrites the file. A genuine change of meaning may need interpretation, but there is no ladder of upgrades for every build and no automatic backup on each upgrade.
 
@@ -200,15 +200,50 @@ Stations compose through physical layout. To batch a recipe that requires a forg
 
 ## Modules and extension
 
-The flagship game is an engine and a curated collection of modules, not a single binary. The engine owns world state, persistence, the course of play and the interfaces through which modules attach; what the game is made of comes from modules. Flagship-first determines which functionality is developed first, not a bias toward coupling or privileged first-party code: first-party modules use exactly the mechanisms open to everyone else. A versioned flagship manifest names the modules that make up the standard game.
+The flagship game is an engine and a curated collection of modules, not a single binary. The product is the flagship game, not the engine: modularity is a property of the game, which lets it be rebuilt part by part while it remains itself. Flagship-first determines which functionality is developed first, not a bias toward coupling or privileged first-party code: first-party modules use exactly the mechanisms open to everyone else. A versioned flagship manifest names the modules that make up the standard game.
 
-Shared operations are implemented once and generalized where that serves the game's uses. Engine responsibilities, content, and presentation have clear ownership so additional features and other games can extend the system without untangling the flagship from its internals.
+Interfaces are cut where the flagship's own modules actually meet, sized to what those modules need, not generalized in advance for hypothetical replacements. Shared operations are implemented once and generalized where that serves the game's uses.
+
+### The engine
+
+The engine is the keeper of the world and the place where modules meet. It holds what exists, where it is and when it changed; it remembers it; and it lets modules see and change it in order. It decides what nothing means: meaning, behavior and appearance come from modules. Not understanding something is never permission to erase it, which is why saves keep properties the game does not recognize and missing content keeps its identity.
+
+The engine has five responsibilities:
+
+- **Space.** The shape of universes and worlds: a two-dimensional, horizontally wrapping, finite-height grid in chunks and regions, the layers of its cells, and where actors are.
+- **Identity.** Stable identifiers for blocks, modules and worlds, and for each thing the properties that modules own. The engine keeps a module's properties without reading them.
+- **Time.** The tick, the order of changes, and the scheduling of work ahead of play, so every module sees one consistent world.
+- **Memory.** Persistence: what changed is kept, and saved state is authoritative.
+- **Hosting.** Loading modules, checking interface versions, resolving dependencies, and carrying data and events between modules, so that modules react to changes rather than calling one another.
+
+The test for any feature: if it must interpret what something means, it belongs to a module; if it only keeps, places, orders or connects, it belongs to the engine. The shape of space is the engine's; what fills it is declared by modules.
+
+### Layers
+
+The engine keeps the layers of each cell; modules declare which layers exist and what they hold. The flagship's content declares two block layers, the foreground and the rear layer (see Background depth), and modules depend on that declaration rather than on each other. Other modules can declare more: fluids, wiring or light are each a layer of the cell. A layer is either kept or derived. A kept layer is saved and filled when land is generated; in chunks saved before its module was added, it is empty. A derived layer, such as light or decoration computed from the other layers, is worked out whenever a chunk loads or changes, everywhere including older land, and is never generated or saved. Modules reach layer data in bulk, through handles, fast enough for work done every tick.
+
+### The flagship's modules
+
+The flagship is made of these modules, nearly all of them core: replacing one comes close to making a different game, which the architecture permits but the flagship does not need.
+
+- **The generator** makes new land (see The generator below).
+- **Physics** is shared ground: one per world, offering the rules of movement and collision to every actor, so the player and a creature agree on what is solid. It reads the world's parameters, so gravity can differ between worlds.
+- **Embodiment** is the character: one block tall, facing, reach and the forgiveness margin, moving through physics.
+- **Controls** turn input into intents, such as facing, aiming, placing, hitting and opening the ring, offered to the modules that act on them. Touch or gamepad controls are other controls modules.
+- **Crafting** reads arrangements and transforms them.
+- **Tools** give held objects their capabilities and requirements.
+- **Inventory** keeps what the character carries, including the belt of what is ready.
+- **Presentation** decides how everything is represented: whether a block is drawn in 16 pixels, 256 or a single character, how the view fits the screen, and how the interface looks. Texture packs are made for a particular presentation module, as add-ons are made for a particular generator. A terminal edition would be another presentation module.
+- **Scripting** hosts scripts, starting with Lua.
+- **Content** modules carry the flagship's blocks, recipes and layer declarations as data. The flagship's art is a texture pack for its presentation module.
+
+Each module has its own version; the flagship's version is the version of the game.
 
 ### Native modules
 
-A native module is a shared library that attaches to the engine at a defined extension point through a narrow C interface. Any language that can speak that interface can build one. Each extension point owns its interface and its version, checked when a module loads. There is no universal binary interface for everything, and adding an extension point never breaks the existing ones. Desktop platforms load native modules at runtime; platforms that forbid loading code link the same interfaces in when the game is built, so modding there is more limited. Changes that no extension point reaches call for a custom build of the engine.
+A module is a folder holding its declaration, and optionally data and a native library; a content pack is simply a module without code, and one loader handles both. A native module's library attaches to the engine at a defined extension point through a narrow C interface. Any language that can speak that interface can build one. Each extension point owns its interface and its version, checked when a module loads. There is no universal binary interface for everything, and adding an extension point never breaks the existing ones. Desktop platforms load native modules at runtime; platforms that forbid loading code link the same interfaces in when the game is built, so modding there is more limited. Changes that no extension point reaches call for a custom build of the engine.
 
-Everything crossing the boundary is data and handles, never engine internals. References held by a module have defined lifetimes across chunk loading and unloading. A native module runs with the full rights of any program; installing one is a decision to trust its author.
+Everything crossing the boundary is plain C values and handles, never engine internals or raw JSON: the engine does the parsing. References held by a module have defined lifetimes across chunk loading and unloading. A native module runs with the full rights of any program; installing one is a decision to trust its author.
 
 The engine is not the only thing that offers extension interfaces. Any module can offer its own, in whatever form suits it: a declarative format, a C interface, a scripting API. The Lua module offering a Lua API to scripts and a generator offering an interface to the mods that extend it are the same shape. A mod built on a module's interface depends on that module, and on the version of the interface it was made for.
 
@@ -224,7 +259,7 @@ Scripting languages are native modules that host scripts. A Lua module embeds an
 
 ### The generator
 
-A generator is a native module that attaches at the generation extension point, the first extension point. Each world names one. It decides which factors that world's generation can consider at all, and it does the work: given a chunk's place, the world's parameters, its neighbors' boundary information and the add-on data addressed to it, it returns the chunk's two layers, its ground line and whatever data of its own the chunk keeps for later neighbors. Its result depends only on those inputs, and it runs alongside play.
+A generator is a native module that attaches at the generation extension point, the first extension point. Each world names one. It decides which factors that world's generation can consider at all, and it does the work: given a chunk's place, the world's parameters, its neighbors' boundary information and the add-on data addressed to it, it fills the layers it knows, decides the backdrop, and keeps whatever data of its own it needs for later neighbors. A module that adds a kept layer fills that layer in new land, either through the engine or through an interface the generator offers. Through the engine, generation runs as passes: after the generator, each module that owns another kept layer fills its own, reading the layers before it, so a water module can place water by the terrain without knowing which generator made it. A layer that needs the generator's internal fields, such as humidity or biome, depends on the interface that generator offers. Its result depends only on those inputs, and it runs alongside play.
 
 Generation mods take three forms:
 
@@ -258,6 +293,8 @@ The build never downloads its own dependencies: everything it needs is installed
 
 The world model and game logic remain independent of SDL-specific presentation details. The flagship uses pixel-art tiles and sprites. The world and its content are not defined in terms of either pixels or terminal glyphs.
 
+The engine is the program a player starts, and it runs the frame. Each frame it lets the presentation module, which owns the window, collect what happened, passes input on to the controls module, advances time, and asks presentation to draw. The window, the display and input devices belong to those modules; what the engine itself needs from the operating system, such as file locations and loading module libraries, is a small platform-specific part of the engine. On platforms where the operating system drives each frame, that part answers the operating system's calls instead of running a loop of its own. Supporting a platform therefore means that small part of the engine plus presentation and controls modules made for it.
+
 Playing together starts as two players on one screen in one process: a second set of keys and a shared view, with no synchronization model needed.
 
 **Open:** Mobile packaging, and whether networked multiplayer becomes part of the game.
@@ -265,6 +302,8 @@ Playing together starts as two players on one screen in one process: a second se
 ## Art, licensing, and community
 
 ### Visual direction
+
+Representation belongs to the presentation module. What follows is the direction of the flagship's presentation module and the texture pack made for it.
 
 The target is appealing fantasy pixel art, not deliberately coarse placeholders or a nostalgic console or debug-screen treatment. Terraria is a reference for the broader visual experience; Habitica is a reference for compact, enjoyable character art and its fantasy register, not merely a resolution measurement. These are references for qualities, not assets to clone or templates for other game systems.
 
